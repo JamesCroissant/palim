@@ -6,9 +6,8 @@
 
 namespace palim {
 
-// Writes each CommitEvent to commits/NNN/{before.jpg,after.jpg}.
-// Numbering is sequential per run, starting at 1. Metadata.json is
-// added in Step 5 — this only handles the images.
+// Writes each CommitEvent to commits/NNN/{before.jpg,after.jpg,metadata.json}.
+// Numbering is sequential per run, starting at 1.
 class SnapshotWriter {
 public:
     explicit SnapshotWriter(std::filesystem::path outputDir = "commits");
@@ -16,6 +15,9 @@ public:
     void write(const CommitEvent& event);
 
 private:
+    static double computeSharpness(const cv::Mat& frame);
+    static std::string formatTimestamp(std::chrono::system_clock::time_point tp);
+
     std::filesystem::path outputDir_;
     int nextId_ = 1;
 };
