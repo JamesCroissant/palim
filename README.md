@@ -35,8 +35,8 @@ physical change on the desk → detected → before/after frames + metadata save
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design
-rationale, what's implemented, and what's deliberately deferred (Git
-integration, a timeline UI, and more).
+rationale, what's implemented, and what's deliberately deferred (richer
+V4L2 metadata, a timeline UI, and more).
 
 ## How it works
 
@@ -75,9 +75,18 @@ commits/
 {
   "timestamp": "2026-09-15T09:22:08",
   "change_score": 42.5,
-  "sharpness_score": 1197.52
+  "sharpness_score": 1197.52,
+  "git": {
+    "available": true,
+    "commit": "a91e32f...",
+    "dirty_files": ["src/camera.hpp", "src/main.cpp"]
+  }
 }
 ```
+
+The `git` block reflects whatever repo `palim` is run from (`git`
+subprocess calls in the current working directory) — `available: false`
+if it's not run inside a Git repo, or `git` isn't installed.
 
 ## Building
 
@@ -117,8 +126,8 @@ Sections referenced below are from the original project spec; see
 - [x] Ring buffer + best-frame selection (Phase 1.5)
 - [x] Raw V4L2 capture (open/ioctl/mmap) instead of `cv::VideoCapture` (Phase 2)
 - [x] Multithreaded capture / processing / storage pipeline (Phase 3)
-- [ ] Git integration (pair each physical commit with the current
-      `git rev-parse HEAD` and dirty-file list)
+- [x] Git integration (pair each physical commit with the current
+      `git rev-parse HEAD` and dirty-file list) (Phase 4)
 - [ ] Richer V4L2 metadata (exposure, gain, white balance) per commit
 - [ ] Timeline UI
 - [ ] "What changed?" diffing across physical + software state

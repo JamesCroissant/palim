@@ -1,8 +1,9 @@
 # palim — Phase 1 MVP Architecture
 
 Status: Phase 1 (Steps 1–5), Phase 1.5 (ring buffer + best-frame
-selection), Phase 2 (raw V4L2 capture), and Phase 3 (multithreading) are
-implemented. This document exists to agree on the
+selection), Phase 2 (raw V4L2 capture), Phase 3 (multithreading), and
+Phase 4 (Git integration) are implemented. This document exists to
+agree on the
 shape of the system *before* writing code, per the project's own philosophy
 of understanding each layer (camera → kernel → V4L2 → buffer → OpenCV →
 processing → event → storage) rather than hiding it behind a library.
@@ -247,8 +248,36 @@ consumer-actually-blocks, shutdown unblocks a waiting consumer, 20,000
 items through a concurrent producer/consumer with zero loss) run both
 normally and under ThreadSanitizer — no data races reported.
 
+## Phase 4: Git integration
+
+`SnapshotWriter::write` now also runs `git rev-parse HEAD` and
+`git status --porcelain` as subprocesses (via `popen`, in `git_info.cpp`)
+in the process's current working directory, and records the result in
+`metadata.json`:
+
+```json
+"git": {
+  "available": true,
+  "commit": "a91e32f...",
+  "dirty_files": ["src/camera.hpp", "src/main.cpp"]
+}
+```
+
+No `libgit2` dependency — this only runs once per commit (at most every
+few seconds), so a subprocess call isn't worth a library for. If the
+working directory isn't a Git repo, or `git` isn't installed, both
+commands exit non-zero and `captureGitInfo()` returns
+`available: false` with nothing else populated — this is supplementary
+metadata the rest of the pipeline never depends on, so it fails quietly
+rather than treating a missing Git repo as an error.
+
+Verified `captureGitInfo()` directly: run from inside the `palim` repo
+(returns the real HEAD commit and the actual dirty files at the time),
+and from `/tmp` (a non-repo directory, correctly returns
+`available: false`). Also verified the full `metadata.json` output is
+valid JSON in both cases.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - V4L2 control metadata (exposure, gain, white balance) in metadata.json (section 15)
-- Git integration (commit hash, dirty files) (section 14)
 - Timeline UI (section 16)
