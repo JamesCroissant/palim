@@ -6,8 +6,14 @@
 #include "camera.hpp"
 #include "change_detector.hpp"
 
-// Step 2: adds per-frame change percentage, printed to the terminal.
-// Still no decision-making about what the number means — that's Step 3.
+// Step 3: adds a fixed threshold on top of Step 2's percentage. Deciding
+// "significant enough to count as change" belongs here for now; deciding
+// what to *do* about it (wait for stability, commit once) is Step 4's
+// StateMachine, not this.
+namespace {
+constexpr double kChangeThresholdPercent = 5.0;
+}
+
 int main() {
     palim::Camera camera(0);
     if (!camera.isOpened()) {
@@ -32,6 +38,9 @@ int main() {
         if (prevFrame) {
             const double changedPercent = detector.compare(*prevFrame, *frame);
             std::cout << "changed: " << changedPercent << "%\n";
+            if (changedPercent > kChangeThresholdPercent) {
+                std::cout << "CHANGE DETECTED\n";
+            }
         }
         prevFrame = frame;
 
