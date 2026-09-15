@@ -1,8 +1,8 @@
 # palim — Phase 1 MVP Architecture
 
 Status: Phase 1 (Steps 1–5), Phase 1.5 (ring buffer + best-frame
-selection), and Phase 2 (raw V4L2 capture) are implemented. This
-document exists to agree on the
+selection), Phase 2 (raw V4L2 capture), and Phase 3 (multithreading) are
+implemented. This document exists to agree on the
 shape of the system *before* writing code, per the project's own philosophy
 of understanding each layer (camera → kernel → V4L2 → buffer → OpenCV →
 processing → event → storage) rather than hiding it behind a library.
@@ -14,11 +14,12 @@ Prove the smallest possible loop:
 > physical state change on the desk → automatically detected → before/after
 > frames saved with metadata
 
-No threading, no Git integration, no GUI. Those are named explicitly in
-later phases below so it's clear they're deferred, not forgotten. Ring
-buffer + best-frame selection (Phase 1.5) and raw V4L2 capture (Phase 2)
-*are* now implemented, since both turned out to be small, self-contained
-additions once the pieces they build on existed.
+No Git integration, no timeline UI. Those are named explicitly in later
+phases below so it's clear they're deferred, not forgotten. Ring buffer
++ best-frame selection (Phase 1.5), raw V4L2 capture (Phase 2), and
+capture/processing/storage threading (Phase 3) *are* now implemented,
+since each turned out to be a small, self-contained addition once the
+pieces it builds on existed.
 
 ## Directory structure
 
@@ -38,7 +39,8 @@ palim/
 │   ├── snapshot_writer.hpp/.cpp   # SnapshotWriter: before/after jpg + metadata.json
 │   ├── frame_quality.hpp/.cpp     # computeSharpness(): shared by SnapshotWriter + FrameHistory
 │   ├── ring_buffer.hpp            # RingBuffer<T>: generic fixed-capacity circular buffer
-│   └── frame_history.hpp/.cpp     # FrameHistory: recent-frames window + best-frame-in-range
+│   ├── frame_history.hpp/.cpp     # FrameHistory: recent-frames window + best-frame-in-range
+│   └── blocking_queue.hpp         # BlockingQueue<T>: thread-safe producer/consumer queue
 └── commits/                  # runtime output, gitignored
     └── 001/
         ├── before.jpg
@@ -83,38 +85,56 @@ multithreading actually adds enough files to need it.
   "what's the sharpest frame between these two timestamps?" via
   `bestFrameInRange`. Clones every frame it stores (see note below).
 
-- **main.cpp** — the loop: `grab → push into FrameHistory → detect → feed
-  state machine → on commit, ask FrameHistory for a sharper `after`, then
-  write`. No class of its own; this is intentional so the data flow stays
-  visible in one place instead of buried in a "Pipeline" abstraction we
-  don't need yet.
+- **BlockingQueue\<T\>** — thread-safe producer/consumer queue (mutex +
+  condition_variable). `push()` never blocks (drops the oldest item if
+  full); `waitAndPop()` blocks until an item arrives or `shutdown()` is
+  called. The only synchronization primitive Phase 3 needed.
 
-## Data flow (Phase 1 + 1.5)
+- **main.cpp** — no longer a single loop. It spawns capture / processing
+  / storage threads (see Phase 3 below) connected by two
+  `BlockingQueue`s, and itself keeps only the GUI loop. Still no
+  "Pipeline" class — the thread bodies keep the data flow visible rather
+  than hiding it behind an abstraction.
+
+## Data flow (as of Phase 3)
 
 ```
+[capture thread]                     [processing thread]                [storage thread]
 Camera::grab()
-      │  cv::Mat frame, timestamp
-      ├──────────────────────────────► FrameHistory::push(frame, timestamp)
+      │ cv::Mat frame, timestamp
+      ├──► displayMutex-guarded          (nothing shared with
+      │    displayFrame, for              other threads: detector,
+      │    [main thread]'s GUI            stateMachine, frameHistory
+      │                                   all live here alone)
       ▼
-ChangeDetector::compare(prevFrame, frame)
-      │  double changedPercent
-      ▼
-StateMachine::update(changedPercent, frame, now)
-      │  (usually nothing)
-      │  occasionally: CommitEvent{before, after, changeScore,
-      │                             stableWindowStart, stableWindowEnd}
-      ▼
-FrameHistory::bestFrameInRange(stableWindowStart, stableWindowEnd)
-      │  overwrites event.after if a sharper candidate exists
-      ▼
-SnapshotWriter::write(event)
-      │
-      ▼
-commits/NNN/{before.jpg, after.jpg, metadata.json}
+BlockingQueue<FrameSample>
+  ::push()  ───────────────────►  ::waitAndPop()
+                                          │
+                                          ▼
+                                   FrameHistory::push(frame, timestamp)
+                                          ▼
+                                   ChangeDetector::compare(prevFrame, frame)
+                                          │ double changedPercent
+                                          ▼
+                                   StateMachine::update(changedPercent,
+                                                         frame, timestamp)
+                                          │ occasionally: CommitEvent
+                                          ▼
+                                   FrameHistory::bestFrameInRange(...)
+                                          │ overwrites event.after if sharper
+                                          ▼
+                                   BlockingQueue<CommitEvent>
+                                     ::push()  ──────────────────►  ::waitAndPop()
+                                                                            │
+                                                                            ▼
+                                                                     SnapshotWriter::write()
+                                                                            ▼
+                                                    commits/NNN/{before.jpg, after.jpg, metadata.json}
 ```
 
-Everything after `main`'s loop is synchronous, single-threaded. One frame
-in, one decision out, per iteration.
+Each thread body is still a straight synchronous pipe internally — one
+frame in, one decision out — same as Phase 1. Threading only changed how
+the stages are *connected*, not what happens inside each one.
 
 **Note on `.clone()`:** `FrameHistory::push` deep-copies every frame it
 stores. `cv::VideoCapture` backends can reuse an internal scratch buffer
@@ -133,6 +153,7 @@ in practice.
   Phase 2: Camera no longer uses `cv::VideoCapture`)
 - Linux V4L2 headers (`linux/videodev2.h`, part of `linux-libc-dev` /
   shipped with the kernel headers most distros already have)
+- pthreads (`std::thread`, `CMakeLists.txt` links `Threads::Threads`)
 - No JSON library yet — `metadata.json` in Step 5 is small and fixed-shape
   enough to write by hand with `std::ofstream`. We can pull in
   `nlohmann/json` later if the schema grows; not worth a dependency for
@@ -183,9 +204,51 @@ one layer closer to the kernel.
 The public `Camera` interface (`grab() -> std::optional<cv::Mat>`) is
 identical to Phase 1's; nothing downstream of `Camera` changed.
 
+## Phase 3: multithreading
+
+`main.cpp` now spawns three threads instead of running one loop:
+
+- **Capture thread** owns the moved-in `Camera` exclusively. Each frame
+  goes two places: a mutex-guarded `displayFrame` (for the GUI) and
+  `BlockingQueue<FrameSample>` (for processing).
+- **Processing thread** owns `ChangeDetector`, `StateMachine`, and
+  `FrameHistory` — constructed *inside* the thread's own function, so
+  nothing outside ever touches them and no locking is needed for any of
+  the three. Pops frames, runs the same detect → state machine →
+  best-frame pipeline as before, and pushes any resulting `CommitEvent`
+  onto a second queue.
+- **Storage thread** owns `SnapshotWriter` exclusively. Pops
+  `CommitEvent`s and writes them to disk.
+- **Main thread** keeps the GUI (`cv::namedWindow`/`imshow`/`waitKey`),
+  since OpenCV's highgui isn't guaranteed thread-safe across backends.
+
+The general principle: state that only one thread ever touches needs no
+synchronization at all. The two `BlockingQueue`s and the display
+`std::mutex` are the *only* three things actually shared between
+threads — everything else (`Camera`, `ChangeDetector`, `StateMachine`,
+`FrameHistory`, `SnapshotWriter`) is exclusively owned by exactly one
+thread, unchanged from earlier phases.
+
+**Shutdown** cascades in one direction: pressing Esc sets an
+`std::atomic<bool> running` to false → the capture thread's loop exits
+and calls `frameQueue.shutdown()` → the processing thread's
+`waitAndPop()` drains what's left, returns `nullopt`, and the thread
+exits after calling `commitQueue.shutdown()` → the storage thread drains
+and exits the same way → `main` joins all three.
+
+**Timestamps**: `StateMachine::update` now uses each frame's own capture
+timestamp (recorded in the capture thread) rather than "now" at
+processing time, since the queue between the two threads can add
+latency — stability should be measured against when things actually
+happened on the desk, not when the processing thread got around to it.
+
+Verified with unit tests (FIFO order, drop-oldest-when-full,
+consumer-actually-blocks, shutdown unblocks a waiting consumer, 20,000
+items through a concurrent producer/consumer with zero loss) run both
+normally and under ThreadSanitizer — no data races reported.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
-- Multithreading: capture / processing / storage threads (section 11)
 - V4L2 control metadata (exposure, gain, white balance) in metadata.json (section 15)
 - Git integration (commit hash, dirty files) (section 14)
 - Timeline UI (section 16)

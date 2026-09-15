@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # No more videoio: Camera now talks to V4L2 directly (open/ioctl/mmap)
 # instead of going through cv::VideoCapture.
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui imgcodecs)
+find_package(Threads REQUIRED)
 
 add_executable(palim
     src/main.cpp
@@ -19,4 +20,4 @@ add_executable(palim
 )
 
 target_include_directories(palim PRIVATE ${OpenCV_INCLUDE_DIRS})
-target_link_libraries(palim PRIVATE ${OpenCV_LIBS})
+target_link_libraries(palim PRIVATE ${OpenCV_LIBS} Threads::Threads)

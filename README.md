@@ -27,34 +27,37 @@ can go back and look at.
 
 ## Status
 
-Early and incremental, by design. The current implementation is a
-single-threaded MVP that proves the core loop:
+Early and incremental, by design. The current implementation proves the
+core loop:
 
 ```
 physical change on the desk → detected → before/after frames + metadata saved
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design
-rationale, what's implemented, and what's deliberately deferred
-(multithreading, Git integration, a timeline UI, and more).
+rationale, what's implemented, and what's deliberately deferred (Git
+integration, a timeline UI, and more).
 
 ## How it works
 
+Capture, processing, and storage run on separate threads, connected by
+thread-safe queues:
+
 ```
-Camera (raw V4L2: open/ioctl/mmap, no cv::VideoCapture)
-      │
-      ▼
-FrameHistory        — keeps the last ~3s of frames in a ring buffer
-      │
-      ▼
-ChangeDetector       — grayscale → blur → diff → threshold → changed %
-      │
-      ▼
-StateMachine         — STABLE → CHANGING → WAIT_FOR_STABLE → commit
-      │
-      ▼
-SnapshotWriter       — picks the sharpest "after" frame from FrameHistory,
-                        writes before.jpg / after.jpg / metadata.json
+[capture thread]              [processing thread]                [storage thread]
+
+Camera (raw V4L2:       FrameHistory (ring buffer of        SnapshotWriter
+open/ioctl/mmap)         recent frames)                       (picks the sharpest
+      │                        │                                "after" frame,
+      ▼                        ▼                                writes before.jpg /
+BlockingQueue<FrameSample> ─► ChangeDetector (changed %)         after.jpg /
+      │                        │                                metadata.json)
+      ▼                        ▼                                     ▲
+ displayFrame            StateMachine (STABLE →                      │
+ (for the GUI,             CHANGING → WAIT_FOR_STABLE)                │
+ [main thread])                │                                     │
+                                ▼                                     │
+                         BlockingQueue<CommitEvent> ──────────────────┘
 ```
 
 When the desk holds still for 2 seconds after a detected change, `palim`
@@ -78,9 +81,9 @@ commits/
 
 ## Building
 
-Requires a C++17 compiler, CMake ≥ 3.16, Linux V4L2 headers (already
-present on most distros via the kernel headers package), and OpenCV
-(`core`, `imgproc`, `highgui`, `imgcodecs`).
+Requires a C++17 compiler, CMake ≥ 3.16, pthreads, Linux V4L2 headers
+(already present on most distros via the kernel headers package), and
+OpenCV (`core`, `imgproc`, `highgui`, `imgcodecs`).
 
 ```sh
 # Debian/Ubuntu
@@ -113,7 +116,7 @@ Sections referenced below are from the original project spec; see
 - [x] Change detection + stable-state commit loop (Phase 1)
 - [x] Ring buffer + best-frame selection (Phase 1.5)
 - [x] Raw V4L2 capture (open/ioctl/mmap) instead of `cv::VideoCapture` (Phase 2)
-- [ ] Multithreaded capture / processing / storage pipeline
+- [x] Multithreaded capture / processing / storage pipeline (Phase 3)
 - [ ] Git integration (pair each physical commit with the current
       `git rev-parse HEAD` and dirty-file list)
 - [ ] Richer V4L2 metadata (exposure, gain, white balance) per commit
