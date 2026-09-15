@@ -4,12 +4,14 @@ project(palim CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui imgcodecs)
 
 add_executable(palim
     src/main.cpp
     src/camera.cpp
     src/change_detector.cpp
+    src/state_machine.cpp
+    src/snapshot_writer.cpp
 )
 
 target_include_directories(palim PRIVATE ${OpenCV_INCLUDE_DIRS})

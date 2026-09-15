@@ -1,3 +1,4 @@
+#include <chrono>
 #include <iostream>
 #include <optional>
 
@@ -5,13 +6,14 @@
 
 #include "camera.hpp"
 #include "change_detector.hpp"
+#include "snapshot_writer.hpp"
+#include "state_machine.hpp"
 
-// Step 3: adds a fixed threshold on top of Step 2's percentage. Deciding
-// "significant enough to count as change" belongs here for now; deciding
-// what to *do* about it (wait for stability, commit once) is Step 4's
-// StateMachine, not this.
+// Step 4: StateMachine now owns the CHANGING / WAIT_FOR_STABLE decision;
+// main.cpp just reports whatever CommitEvent (if any) comes back.
 namespace {
 constexpr double kChangeThresholdPercent = 5.0;
+constexpr auto kStableDuration = std::chrono::seconds(2);
 }
 
 int main() {
@@ -22,6 +24,8 @@ int main() {
     }
 
     palim::ChangeDetector detector;
+    palim::StateMachine stateMachine(kChangeThresholdPercent, kStableDuration);
+    palim::SnapshotWriter snapshotWriter;
 
     const std::string windowName = "palim";
     cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
@@ -40,6 +44,12 @@ int main() {
             std::cout << "changed: " << changedPercent << "%\n";
             if (changedPercent > kChangeThresholdPercent) {
                 std::cout << "CHANGE DETECTED\n";
+            }
+
+            auto commit = stateMachine.update(changedPercent, *frame, std::chrono::steady_clock::now());
+            if (commit) {
+                snapshotWriter.write(*commit);
+                std::cout << "COMMIT saved\n";
             }
         }
         prevFrame = frame;
