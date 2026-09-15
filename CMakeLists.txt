@@ -9,6 +9,7 @@ find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui)
 add_executable(palim
     src/main.cpp
     src/camera.cpp
+    src/change_detector.cpp
 )
 
 target_include_directories(palim PRIVATE ${OpenCV_INCLUDE_DIRS})

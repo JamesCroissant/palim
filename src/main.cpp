@@ -1,10 +1,13 @@
 #include <iostream>
+#include <optional>
 
 #include <opencv2/highgui.hpp>
 
 #include "camera.hpp"
+#include "change_detector.hpp"
 
-// Step 1: open the camera and show what it sees. Nothing else yet.
+// Step 2: adds per-frame change percentage, printed to the terminal.
+// Still no decision-making about what the number means — that's Step 3.
 int main() {
     palim::Camera camera(0);
     if (!camera.isOpened()) {
@@ -12,8 +15,12 @@ int main() {
         return 1;
     }
 
+    palim::ChangeDetector detector;
+
     const std::string windowName = "palim";
     cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
+
+    std::optional<cv::Mat> prevFrame;
 
     while (true) {
         auto frame = camera.grab();
@@ -21,6 +28,12 @@ int main() {
             std::cerr << "Frame grab failed, retrying...\n";
             continue;
         }
+
+        if (prevFrame) {
+            const double changedPercent = detector.compare(*prevFrame, *frame);
+            std::cout << "changed: " << changedPercent << "%\n";
+        }
+        prevFrame = frame;
 
         cv::imshow(windowName, *frame);
 
