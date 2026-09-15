@@ -17,6 +17,7 @@ add_executable(palim
     src/snapshot_writer.cpp
     src/frame_quality.cpp
     src/frame_history.cpp
+    src/git_info.cpp
 )
 
 target_include_directories(palim PRIVATE ${OpenCV_INCLUDE_DIRS})

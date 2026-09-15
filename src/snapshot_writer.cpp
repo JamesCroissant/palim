@@ -8,8 +8,25 @@
 #include <opencv2/imgcodecs.hpp>
 
 #include "frame_quality.hpp"
+#include "git_info.hpp"
 
 namespace palim {
+
+namespace {
+
+std::string jsonEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c == '"' || c == '\\') {
+            out += '\\';
+        }
+        out += c;
+    }
+    return out;
+}
+
+}  // namespace
 
 SnapshotWriter::SnapshotWriter(std::filesystem::path outputDir) : outputDir_(std::move(outputDir)) {
     std::filesystem::create_directories(outputDir_);
@@ -37,12 +54,24 @@ void SnapshotWriter::write(const CommitEvent& event) {
 
     const std::string timestamp = formatTimestamp(std::chrono::system_clock::now());
     const double sharpness = computeSharpness(event.after);
+    const GitInfo git = captureGitInfo();
 
     std::ofstream meta(dir / "metadata.json");
     meta << "{\n"
          << "  \"timestamp\": \"" << timestamp << "\",\n"
          << "  \"change_score\": " << event.changeScore << ",\n"
-         << "  \"sharpness_score\": " << sharpness << "\n"
+         << "  \"sharpness_score\": " << sharpness << ",\n"
+         << "  \"git\": {\n"
+         << "    \"available\": " << (git.available ? "true" : "false") << (git.available ? ",\n" : "\n");
+    if (git.available) {
+        meta << "    \"commit\": \"" << jsonEscape(git.commitHash) << "\",\n"
+             << "    \"dirty_files\": [";
+        for (std::size_t i = 0; i < git.dirtyFiles.size(); ++i) {
+            meta << (i == 0 ? "\n" : ",\n") << "      \"" << jsonEscape(git.dirtyFiles[i]) << "\"";
+        }
+        meta << (git.dirtyFiles.empty() ? "" : "\n") << "    ]\n";
+    }
+    meta << "  }\n"
          << "}\n";
 
     ++nextId_;
