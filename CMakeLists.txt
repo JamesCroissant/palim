@@ -4,7 +4,9 @@ project(palim CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(OpenCV REQUIRED COMPONENTS core imgproc videoio highgui imgcodecs)
+# No more videoio: Camera now talks to V4L2 directly (open/ioctl/mmap)
+# instead of going through cv::VideoCapture.
+find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui imgcodecs)
 
 add_executable(palim
     src/main.cpp

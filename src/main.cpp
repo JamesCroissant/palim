@@ -21,9 +21,9 @@ constexpr std::size_t kFrameHistoryCapacity = 90;
 }
 
 int main() {
-    palim::Camera camera(0);
+    palim::Camera camera("/dev/video0");
     if (!camera.isOpened()) {
-        std::cerr << "Failed to open camera at index 0\n";
+        std::cerr << "Failed to open camera at /dev/video0\n";
         return 1;
     }
 

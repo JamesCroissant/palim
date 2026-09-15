@@ -1,7 +1,8 @@
 # palim — Phase 1 MVP Architecture
 
-Status: Phase 1 (Steps 1–5) and Phase 1.5 (ring buffer + best-frame
-selection) are implemented. This document exists to agree on the
+Status: Phase 1 (Steps 1–5), Phase 1.5 (ring buffer + best-frame
+selection), and Phase 2 (raw V4L2 capture) are implemented. This
+document exists to agree on the
 shape of the system *before* writing code, per the project's own philosophy
 of understanding each layer (camera → kernel → V4L2 → buffer → OpenCV →
 processing → event → storage) rather than hiding it behind a library.
@@ -13,11 +14,11 @@ Prove the smallest possible loop:
 > physical state change on the desk → automatically detected → before/after
 > frames saved with metadata
 
-No threading, no V4L2 raw ioctl calls, no Git integration, no GUI. Those
-are named explicitly in later phases below so it's clear they're
-deferred, not forgotten. Ring buffer + best-frame selection *is* now
-implemented (Phase 1.5, see below) since it turned out to be a small,
-self-contained addition once Step 5 landed.
+No threading, no Git integration, no GUI. Those are named explicitly in
+later phases below so it's clear they're deferred, not forgotten. Ring
+buffer + best-frame selection (Phase 1.5) and raw V4L2 capture (Phase 2)
+*are* now implemented, since both turned out to be small, self-contained
+additions once the pieces they build on existed.
 
 ## Directory structure
 
@@ -45,15 +46,17 @@ palim/
         └── metadata.json
 ```
 
-Flat `src/` on purpose for Phase 1 — five small classes don't need
-`capture/`, `processing/`, `state/` subfolders yet. We'll split it out when
-Phase 2 (multithreading, V4L2) actually adds enough files to justify it.
+Flat `src/` on purpose — the file count still doesn't justify
+`capture/`/`processing/`/`state/` subfolders. We'll split it out when
+multithreading actually adds enough files to need it.
 
 ## Class responsibilities
 
-- **Camera** — owns a `cv::VideoCapture`, opens `/dev/video0`, and exposes
-  one method: `grab() -> std::optional<cv::Mat>`. Nothing else. It doesn't
-  know about change detection or storage.
+- **Camera** — talks to a V4L2 device directly (`open` + `ioctl` + `mmap`,
+  see Phase 2 below), and exposes one method: `grab() ->
+  std::optional<cv::Mat>`. Nothing else. It doesn't know about change
+  detection or storage, and its public interface hasn't changed since
+  Phase 1 even though its entire implementation has.
 
 - **ChangeDetector** — pure function object. Takes two `cv::Mat` frames,
   returns a `double` (percentage of pixels that changed), using
@@ -126,8 +129,10 @@ in practice.
 
 - C++17
 - CMake ≥ 3.16
-- OpenCV (`core`, `imgproc`, `videoio`, `highgui` — the last only for the
-  debug preview window in Step 1)
+- OpenCV (`core`, `imgproc`, `highgui`, `imgcodecs` — no `videoio` since
+  Phase 2: Camera no longer uses `cv::VideoCapture`)
+- Linux V4L2 headers (`linux/videodev2.h`, part of `linux-libc-dev` /
+  shipped with the kernel headers most distros already have)
 - No JSON library yet — `metadata.json` in Step 5 is small and fixed-shape
   enough to write by hand with `std::ofstream`. We can pull in
   `nlohmann/json` later if the schema grows; not worth a dependency for
@@ -158,10 +163,29 @@ untouched — it's already the last frame from well before any change
 started, so it isn't subject to the same motion-blur/autofocus risk that
 motivated this for `after` (spec section 9).
 
+## Phase 2: raw V4L2 capture
+
+`Camera` no longer uses `cv::VideoCapture`. It speaks V4L2 directly:
+`open()` the device node, `VIDIOC_QUERYCAP` to confirm it can stream,
+`VIDIOC_S_FMT` to request YUYV at the desired resolution (and read back
+whatever the driver actually granted), `VIDIOC_REQBUFS` +
+`VIDIOC_QUERYBUF` + `mmap()` to get 4 kernel buffers mapped into our
+address space, `VIDIOC_QBUF` to queue them all, then `VIDIOC_STREAMON`.
+
+Each `grab()` is `VIDIOC_DQBUF` (blocks until the driver fills a buffer)
+→ convert that buffer's YUYV bytes to BGR via `cv::cvtColor` (this is
+also where the data gets copied into memory we own) → `VIDIOC_QBUF` to
+hand the buffer back. The convert-before-requeue ordering matters: once
+requeued, the driver can overwrite that buffer with the next frame at
+any time — the same ownership rule as `FrameHistory::push`'s `.clone()`,
+one layer closer to the kernel.
+
+The public `Camera` interface (`grab() -> std::optional<cv::Mat>`) is
+identical to Phase 1's; nothing downstream of `Camera` changed.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Multithreading: capture / processing / storage threads (section 11)
-- Raw V4L2 (open/ioctl/mmap) instead of `cv::VideoCapture` (section 12)
 - V4L2 control metadata (exposure, gain, white balance) in metadata.json (section 15)
 - Git integration (commit hash, dirty files) (section 14)
 - Timeline UI (section 16)

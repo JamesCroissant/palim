@@ -36,12 +36,12 @@ physical change on the desk → detected → before/after frames + metadata save
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design
 rationale, what's implemented, and what's deliberately deferred
-(multithreading, raw V4L2, Git integration, a timeline UI, and more).
+(multithreading, Git integration, a timeline UI, and more).
 
 ## How it works
 
 ```
-Camera (cv::VideoCapture, V4L2)
+Camera (raw V4L2: open/ioctl/mmap, no cv::VideoCapture)
       │
       ▼
 FrameHistory        — keeps the last ~3s of frames in a ring buffer
@@ -78,12 +78,13 @@ commits/
 
 ## Building
 
-Requires a C++17 compiler, CMake ≥ 3.16, and OpenCV (`core`, `imgproc`,
-`videoio`, `highgui`, `imgcodecs`).
+Requires a C++17 compiler, CMake ≥ 3.16, Linux V4L2 headers (already
+present on most distros via the kernel headers package), and OpenCV
+(`core`, `imgproc`, `highgui`, `imgcodecs`).
 
 ```sh
 # Debian/Ubuntu
-sudo apt-get install libopencv-dev cmake build-essential
+sudo apt-get install libopencv-dev cmake build-essential linux-libc-dev
 
 cmake -S . -B build
 cmake --build build
@@ -95,12 +96,14 @@ cmake --build build
 ./build/palim
 ```
 
-Opens the first camera device (`/dev/video0`) and shows a live preview.
-Press **Esc** to quit. Commits are written to `commits/` in the current
+Opens `/dev/video0` directly via V4L2 and shows a live preview. Press
+**Esc** to quit. Commits are written to `commits/` in the current
 working directory as physical changes are detected.
 
-Developed against a Logitech/Logicool C270 on Linux; any UVC webcam
-`cv::VideoCapture` can open should work.
+Developed against a Logitech/Logicool C270 on Linux; any UVC webcam that
+supports YUYV capture should work. Linux-only — there's no cross-platform
+abstraction here on purpose (see the project's own learning goals in
+`docs/ARCHITECTURE.md`).
 
 ## Roadmap
 
@@ -109,7 +112,7 @@ Sections referenced below are from the original project spec; see
 
 - [x] Change detection + stable-state commit loop (Phase 1)
 - [x] Ring buffer + best-frame selection (Phase 1.5)
-- [ ] Raw V4L2 capture (open/ioctl/mmap) instead of `cv::VideoCapture`
+- [x] Raw V4L2 capture (open/ioctl/mmap) instead of `cv::VideoCapture` (Phase 2)
 - [ ] Multithreaded capture / processing / storage pipeline
 - [ ] Git integration (pair each physical commit with the current
       `git rev-parse HEAD` and dirty-file list)
