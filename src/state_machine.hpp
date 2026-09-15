@@ -9,10 +9,18 @@ namespace palim {
 
 // Result of a completed commit: the frame from just before the change
 // started, and the frame once things settled back down.
+//
+// `after` is the single frame captured at the exact instant stability was
+// confirmed — a reasonable default. stableWindowStart/End mark the span
+// during which the desk held still, so a caller with access to recent
+// frame history (FrameHistory) can pick a sharper candidate from within
+// that window instead, and overwrite `after` before saving.
 struct CommitEvent {
     cv::Mat before;
     cv::Mat after;
     double changeScore;  // the changed-% reading that triggered CHANGING
+    std::chrono::steady_clock::time_point stableWindowStart;
+    std::chrono::steady_clock::time_point stableWindowEnd;
 };
 
 // Implements the STABLE -> CHANGING -> WAIT_FOR_STABLE -> commit cycle

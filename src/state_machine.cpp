@@ -34,7 +34,7 @@ std::optional<CommitEvent> StateMachine::update(double changedPercent, const cv:
                 // it as still one continuous change.
                 state_ = State::Changing;
             } else if (now - stableSince_ >= stableDuration_) {
-                event = CommitEvent{beforeFrame_, frame, changedPercent};
+                event = CommitEvent{beforeFrame_, frame, changedPercent, stableSince_, now};
                 state_ = State::Stable;
             }
             break;

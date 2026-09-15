@@ -6,14 +6,18 @@
 
 #include "camera.hpp"
 #include "change_detector.hpp"
+#include "frame_history.hpp"
 #include "snapshot_writer.hpp"
 #include "state_machine.hpp"
 
-// Step 4: StateMachine now owns the CHANGING / WAIT_FOR_STABLE decision;
-// main.cpp just reports whatever CommitEvent (if any) comes back.
+// Phase 1.5: FrameHistory keeps a rolling window of recent frames so a
+// commit can pick the sharpest one from the stable period, rather than
+// whatever frame happened to be current the instant StateMachine fired.
 namespace {
 constexpr double kChangeThresholdPercent = 5.0;
 constexpr auto kStableDuration = std::chrono::seconds(2);
+// ~30fps * 3s of headroom, per the design doc's own sizing example.
+constexpr std::size_t kFrameHistoryCapacity = 90;
 }
 
 int main() {
@@ -26,6 +30,7 @@ int main() {
     palim::ChangeDetector detector;
     palim::StateMachine stateMachine(kChangeThresholdPercent, kStableDuration);
     palim::SnapshotWriter snapshotWriter;
+    palim::FrameHistory frameHistory(kFrameHistoryCapacity);
 
     const std::string windowName = "palim";
     cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
@@ -39,6 +44,9 @@ int main() {
             continue;
         }
 
+        const auto now = std::chrono::steady_clock::now();
+        frameHistory.push(*frame, now);
+
         if (prevFrame) {
             const double changedPercent = detector.compare(*prevFrame, *frame);
             std::cout << "changed: " << changedPercent << "%\n";
@@ -46,8 +54,11 @@ int main() {
                 std::cout << "CHANGE DETECTED\n";
             }
 
-            auto commit = stateMachine.update(changedPercent, *frame, std::chrono::steady_clock::now());
+            auto commit = stateMachine.update(changedPercent, *frame, now);
             if (commit) {
+                if (auto best = frameHistory.bestFrameInRange(commit->stableWindowStart, commit->stableWindowEnd)) {
+                    commit->after = *best;
+                }
                 snapshotWriter.write(*commit);
                 std::cout << "COMMIT saved\n";
             }

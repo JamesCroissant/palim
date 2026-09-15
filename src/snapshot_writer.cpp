@@ -6,24 +6,13 @@
 #include <sstream>
 
 #include <opencv2/imgcodecs.hpp>
-#include <opencv2/imgproc.hpp>
+
+#include "frame_quality.hpp"
 
 namespace palim {
 
 SnapshotWriter::SnapshotWriter(std::filesystem::path outputDir) : outputDir_(std::move(outputDir)) {
     std::filesystem::create_directories(outputDir_);
-}
-
-double SnapshotWriter::computeSharpness(const cv::Mat& frame) {
-    cv::Mat gray;
-    cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-
-    cv::Mat laplacian;
-    cv::Laplacian(gray, laplacian, CV_64F);
-
-    cv::Scalar mean, stddev;
-    cv::meanStdDev(laplacian, mean, stddev);
-    return stddev[0] * stddev[0];  // variance = sharpness score
 }
 
 std::string SnapshotWriter::formatTimestamp(std::chrono::system_clock::time_point tp) {

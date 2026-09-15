@@ -15,7 +15,6 @@ public:
     void write(const CommitEvent& event);
 
 private:
-    static double computeSharpness(const cv::Mat& frame);
     static std::string formatTimestamp(std::chrono::system_clock::time_point tp);
 
     std::filesystem::path outputDir_;
