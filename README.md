@@ -35,8 +35,8 @@ physical change on the desk → detected → before/after frames + metadata save
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design
-rationale, what's implemented, and what's deliberately deferred (richer
-V4L2 metadata, a timeline UI, and more).
+rationale, what's implemented, and what's deliberately deferred (a
+timeline UI and more).
 
 ## How it works
 
@@ -76,6 +76,15 @@ commits/
   "timestamp": "2026-09-15T09:22:08",
   "change_score": 42.5,
   "sharpness_score": 1197.52,
+  "camera": {
+    "width": 1280,
+    "height": 720,
+    "exposure_auto": 1,
+    "exposure_absolute": 220,
+    "gain": 32,
+    "white_balance_auto": 1,
+    "white_balance_temperature": 4600
+  },
   "git": {
     "available": true,
     "commit": "a91e32f...",
@@ -84,9 +93,12 @@ commits/
 }
 ```
 
-The `git` block reflects whatever repo `palim` is run from (`git`
-subprocess calls in the current working directory) — `available: false`
-if it's not run inside a Git repo, or `git` isn't installed.
+The `camera` block comes from `VIDIOC_G_CTRL` at capture time — any
+control the device doesn't support reads as `null` rather than failing
+the whole commit. The `git` block reflects whatever repo `palim` is run
+from (`git` subprocess calls in the current working directory) —
+`available: false` if it's not run inside a Git repo, or `git` isn't
+installed.
 
 ## Building
 
@@ -128,7 +140,7 @@ Sections referenced below are from the original project spec; see
 - [x] Multithreaded capture / processing / storage pipeline (Phase 3)
 - [x] Git integration (pair each physical commit with the current
       `git rev-parse HEAD` and dirty-file list) (Phase 4)
-- [ ] Richer V4L2 metadata (exposure, gain, white balance) per commit
+- [x] Richer V4L2 metadata (exposure, gain, white balance) per commit (Phase 5)
 - [ ] Timeline UI
 - [ ] "What changed?" diffing across physical + software state
 

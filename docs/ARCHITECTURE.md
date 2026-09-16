@@ -2,7 +2,8 @@
 
 Status: Phase 1 (Steps 1–5), Phase 1.5 (ring buffer + best-frame
 selection), Phase 2 (raw V4L2 capture), Phase 3 (multithreading), and
-Phase 4 (Git integration) are implemented. This document exists to
+Phase 4 (Git integration), and Phase 5 (V4L2 control metadata) are
+implemented. This document exists to
 agree on the
 shape of the system *before* writing code, per the project's own philosophy
 of understanding each layer (camera → kernel → V4L2 → buffer → OpenCV →
@@ -277,7 +278,49 @@ and from `/tmp` (a non-repo directory, correctly returns
 `available: false`). Also verified the full `metadata.json` output is
 valid JSON in both cases.
 
+## Phase 5: V4L2 control metadata
+
+`Camera::currentSettings()` reads `exposure_auto`, `exposure_absolute`,
+`gain`, `white_balance_auto`, and `white_balance_temperature` via
+`VIDIOC_G_CTRL`, one control at a time, alongside the frame's resolution.
+Each control is `std::optional<int>`: a device that doesn't support a
+given control (many UVC webcams don't support all of these) leaves it as
+`std::nullopt` rather than failing the whole read, and `SnapshotWriter`
+renders a missing value as JSON `null`:
+
+```json
+"camera": {
+  "width": 1280,
+  "height": 720,
+  "exposure_auto": 1,
+  "exposure_absolute": 220,
+  "gain": 32,
+  "white_balance_auto": 1,
+  "white_balance_temperature": 4600
+}
+```
+
+`Camera` is exclusively owned by the capture thread (Phase 3), so
+storage/processing threads can't query it directly. Settings ride along
+with each frame instead: `FrameSample` (already carrying a frame and a
+timestamp) gained a `CameraSettings settings` field, populated once per
+`grab()` in the capture thread, and `StateMachine::update` copies it
+straight into the `CommitEvent` it emits. No new synchronization
+primitive was needed — this is the same pattern the timestamp already
+used.
+
+One simplification: `settings` reflects the frame that triggered the
+commit, not necessarily the exact frame Phase 1.5's best-frame selection
+later swaps in for `after`. This is fine in practice — exposure/gain/white
+balance change far more slowly than frame-to-frame, so re-querying per
+candidate during selection wouldn't add meaningful accuracy.
+
+Verified: `currentSettings()` on an unopened `Camera` (no device present)
+returns all-`nullopt` controls without crashing; `SnapshotWriter` output
+was checked with both a fully-populated `CameraSettings` and an
+all-`nullopt` one, confirming valid JSON (with `null` literals, not
+missing keys) in both cases.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
-- V4L2 control metadata (exposure, gain, white balance) in metadata.json (section 15)
 - Timeline UI (section 16)
