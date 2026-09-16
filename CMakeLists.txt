@@ -22,3 +22,10 @@ add_executable(palim
 
 target_include_directories(palim PRIVATE ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(palim PRIVATE ${OpenCV_LIBS} Threads::Threads)
+
+# Reads commits/ and prints a timeline -- no OpenCV needed, it only
+# parses the metadata.json files SnapshotWriter already wrote.
+add_executable(palim-timeline
+    src/timeline_main.cpp
+    src/commit_metadata.cpp
+)
