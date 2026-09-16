@@ -5,6 +5,10 @@
 
 namespace {
 
+std::string shortHash(const std::string& hash) {
+    return hash.substr(0, std::min<std::size_t>(7, hash.size()));
+}
+
 void printOptionalIntChange(const std::string& label, const std::optional<int>& before,
                              const std::optional<int>& after) {
     if (before == after) {
@@ -25,6 +29,39 @@ void printOptionalIntChange(const std::string& label, const std::optional<int>& 
     std::cout << "\n";
 }
 
+// "What changed?" (spec section 4) for the software side: did the Git
+// commit move, and which files became dirty that weren't before. This
+// only compares the two metadata.json snapshots already on disk -- no
+// git commands are re-run here, and there's no attempt to guess *why*
+// something changed (that's future work, deliberately not attempted
+// yet).
+void printGitChange(const palim::CommitMetadata& before, const palim::CommitMetadata& after) {
+    if (!before.gitAvailable || !after.gitAvailable) {
+        return;
+    }
+    if (before.gitCommit == after.gitCommit && before.dirtyFiles == after.dirtyFiles) {
+        return;
+    }
+
+    if (before.gitCommit != after.gitCommit) {
+        std::cout << "        git: " << shortHash(before.gitCommit) << " -> " << shortHash(after.gitCommit) << "\n";
+    }
+
+    std::vector<std::string> newlyDirty;
+    for (const auto& file : after.dirtyFiles) {
+        if (std::find(before.dirtyFiles.begin(), before.dirtyFiles.end(), file) == before.dirtyFiles.end()) {
+            newlyDirty.push_back(file);
+        }
+    }
+    if (!newlyDirty.empty()) {
+        std::cout << "        newly modified:";
+        for (const auto& file : newlyDirty) {
+            std::cout << " " << file;
+        }
+        std::cout << "\n";
+    }
+}
+
 void printCommit(const palim::CommitMetadata& c) {
     std::cout << "#" << c.id << "  " << c.timestamp << "\n";
     std::cout << "  change: " << c.changeScore << "%   sharpness: " << c.sharpnessScore << "\n";
@@ -40,8 +77,7 @@ void printCommit(const palim::CommitMetadata& c) {
     }
     std::cout << "\n";
     if (c.gitAvailable) {
-        const std::string shortHash = c.gitCommit.substr(0, std::min<std::size_t>(7, c.gitCommit.size()));
-        std::cout << "  git: " << shortHash << " (" << c.dirtyFiles.size() << " dirty files)\n";
+        std::cout << "  git: " << shortHash(c.gitCommit) << " (" << c.dirtyFiles.size() << " dirty files)\n";
     }
 }
 
@@ -66,6 +102,7 @@ int main(int argc, char** argv) {
             printOptionalIntChange("exposure", commits[i].exposureAbsolute, next.exposureAbsolute);
             printOptionalIntChange("gain", commits[i].gain, next.gain);
             printOptionalIntChange("white_balance", commits[i].whiteBalanceTemperature, next.whiteBalanceTemperature);
+            printGitChange(commits[i], next);
             std::cout << "        v\n\n";
         }
     }
