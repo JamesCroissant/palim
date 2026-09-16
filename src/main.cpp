@@ -66,12 +66,13 @@ int main() {
                 continue;
             }
             const auto timestamp = std::chrono::steady_clock::now();
+            const auto settings = camera.currentSettings();
 
             {
                 std::lock_guard<std::mutex> lock(displayMutex);
                 displayFrame = *frame;
             }
-            frameQueue.push(palim::FrameSample{timestamp, std::move(*frame)});
+            frameQueue.push(palim::FrameSample{timestamp, std::move(*frame), settings});
         }
         // No more frames coming: let the processing thread know so it
         // can drain what's left and exit instead of blocking forever.
@@ -105,7 +106,8 @@ int main() {
                 // queue between capture and here can add latency, and
                 // stability should be measured against when things
                 // actually happened on the desk.
-                auto commit = stateMachine.update(changedPercent, sample->frame, sample->timestamp);
+                auto commit =
+                    stateMachine.update(changedPercent, sample->frame, sample->timestamp, sample->settings);
                 if (commit) {
                     if (auto best =
                             frameHistory.bestFrameInRange(commit->stableWindowStart, commit->stableWindowEnd)) {

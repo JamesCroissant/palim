@@ -6,6 +6,8 @@
 
 #include <opencv2/core.hpp>
 
+#include "camera_settings.hpp"
+
 namespace palim {
 
 // Talks to a V4L2 capture device directly: open() + ioctl() + mmap(),
@@ -38,6 +40,11 @@ public:
 
     std::optional<cv::Mat> grab();
 
+    // Reads current control values via VIDIOC_G_CTRL. Best-effort: a
+    // control this device doesn't support is left as std::nullopt rather
+    // than failing the whole call.
+    CameraSettings currentSettings() const;
+
 private:
     struct MappedBuffer {
         void* start = nullptr;
@@ -53,6 +60,7 @@ private:
     bool startStreaming();
     void stopStreaming();
     void closeDevice();
+    std::optional<int> getControl(int controlId) const;
 
     int fd_ = -1;
     int width_ = 0;

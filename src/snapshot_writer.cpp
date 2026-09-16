@@ -26,6 +26,12 @@ std::string jsonEscape(const std::string& s) {
     return out;
 }
 
+// Renders the control's value, or the JSON literal null if this device
+// doesn't support it.
+std::string jsonOptionalInt(std::optional<int> value) {
+    return value ? std::to_string(*value) : "null";
+}
+
 }  // namespace
 
 SnapshotWriter::SnapshotWriter(std::filesystem::path outputDir) : outputDir_(std::move(outputDir)) {
@@ -56,11 +62,22 @@ void SnapshotWriter::write(const CommitEvent& event) {
     const double sharpness = computeSharpness(event.after);
     const GitInfo git = captureGitInfo();
 
+    const CameraSettings& cam = event.settings;
+
     std::ofstream meta(dir / "metadata.json");
     meta << "{\n"
          << "  \"timestamp\": \"" << timestamp << "\",\n"
          << "  \"change_score\": " << event.changeScore << ",\n"
          << "  \"sharpness_score\": " << sharpness << ",\n"
+         << "  \"camera\": {\n"
+         << "    \"width\": " << cam.width << ",\n"
+         << "    \"height\": " << cam.height << ",\n"
+         << "    \"exposure_auto\": " << jsonOptionalInt(cam.exposureAuto) << ",\n"
+         << "    \"exposure_absolute\": " << jsonOptionalInt(cam.exposureAbsolute) << ",\n"
+         << "    \"gain\": " << jsonOptionalInt(cam.gain) << ",\n"
+         << "    \"white_balance_auto\": " << jsonOptionalInt(cam.whiteBalanceAuto) << ",\n"
+         << "    \"white_balance_temperature\": " << jsonOptionalInt(cam.whiteBalanceTemperature) << "\n"
+         << "  },\n"
          << "  \"git\": {\n"
          << "    \"available\": " << (git.available ? "true" : "false") << (git.available ? ",\n" : "\n");
     if (git.available) {

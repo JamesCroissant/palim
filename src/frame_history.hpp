@@ -5,6 +5,7 @@
 
 #include <opencv2/core.hpp>
 
+#include "camera_settings.hpp"
 #include "ring_buffer.hpp"
 
 namespace palim {
@@ -12,6 +13,7 @@ namespace palim {
 struct FrameSample {
     std::chrono::steady_clock::time_point timestamp{};
     cv::Mat frame;
+    CameraSettings settings;
 };
 
 // Keeps the last few seconds of frames so a commit can pick the sharpest

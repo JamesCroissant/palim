@@ -229,4 +229,28 @@ std::optional<cv::Mat> Camera::grab() {
     return bgr;
 }
 
+std::optional<int> Camera::getControl(int controlId) const {
+    if (fd_ < 0) {
+        return std::nullopt;
+    }
+    v4l2_control ctrl{};
+    ctrl.id = static_cast<__u32>(controlId);
+    if (xioctl(fd_, VIDIOC_G_CTRL, &ctrl) < 0) {
+        return std::nullopt;  // control not supported by this device
+    }
+    return ctrl.value;
+}
+
+CameraSettings Camera::currentSettings() const {
+    CameraSettings settings;
+    settings.width = width_;
+    settings.height = height_;
+    settings.exposureAuto = getControl(V4L2_CID_EXPOSURE_AUTO);
+    settings.exposureAbsolute = getControl(V4L2_CID_EXPOSURE_ABSOLUTE);
+    settings.gain = getControl(V4L2_CID_GAIN);
+    settings.whiteBalanceAuto = getControl(V4L2_CID_AUTO_WHITE_BALANCE);
+    settings.whiteBalanceTemperature = getControl(V4L2_CID_WHITE_BALANCE_TEMPERATURE);
+    return settings;
+}
+
 }  // namespace palim

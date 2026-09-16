@@ -5,6 +5,8 @@
 
 #include <opencv2/core.hpp>
 
+#include "camera_settings.hpp"
+
 namespace palim {
 
 // Result of a completed commit: the frame from just before the change
@@ -15,12 +17,18 @@ namespace palim {
 // during which the desk held still, so a caller with access to recent
 // frame history (FrameHistory) can pick a sharper candidate from within
 // that window instead, and overwrite `after` before saving.
+//
+// `settings` is the camera's control state at the same instant as
+// `after` -- not re-queried per candidate frame during best-frame
+// selection, since exposure/gain/white-balance change far more slowly
+// than frame-to-frame.
 struct CommitEvent {
     cv::Mat before;
     cv::Mat after;
     double changeScore;  // the changed-% reading that triggered CHANGING
     std::chrono::steady_clock::time_point stableWindowStart;
     std::chrono::steady_clock::time_point stableWindowEnd;
+    CameraSettings settings;
 };
 
 // Implements the STABLE -> CHANGING -> WAIT_FOR_STABLE -> commit cycle
@@ -35,7 +43,8 @@ public:
     // frame. Returns a CommitEvent only on the frame that completes a
     // stable period after a change.
     std::optional<CommitEvent> update(double changedPercent, const cv::Mat& frame,
-                                       std::chrono::steady_clock::time_point now);
+                                       std::chrono::steady_clock::time_point now,
+                                       const CameraSettings& settings);
 
 private:
     enum class State { Stable, Changing, WaitForStable };
