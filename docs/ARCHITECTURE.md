@@ -3,8 +3,9 @@
 Status: Phase 1 (Steps 1–5), Phase 1.5 (ring buffer + best-frame
 selection), Phase 2 (raw V4L2 capture), Phase 3 (multithreading),
 Phase 4 (Git integration), Phase 5 (V4L2 control metadata),
-Phase 6 (timeline CLI), and Phase 6.1 (software-side "what changed?"
-diffing) are implemented. This document exists to agree on the
+Phase 6 (timeline CLI), Phase 6.1 (software-side "what changed?"
+diffing), and Phase 7 (GTest suite) are implemented. This document
+exists to agree on the
 shape of the system *before* writing code, per the project's own philosophy
 of understanding each layer (camera → kernel → V4L2 → buffer → OpenCV →
 processing → event → storage) rather than hiding it behind a library.
@@ -34,15 +35,20 @@ palim/
 ├── docs/
 │   └── ARCHITECTURE.md
 ├── src/
-│   ├── main.cpp              # wires everything together, owns the loop
-│   ├── camera.hpp/.cpp       # Camera: wraps cv::VideoCapture
+│   ├── main.cpp              # spawns capture/processing/storage threads + GUI loop
+│   ├── timeline_main.cpp     # palim-timeline: reads commits/ and prints a summary
+│   ├── camera.hpp/.cpp       # Camera: raw V4L2 (open/ioctl/mmap)
+│   ├── camera_settings.hpp   # CameraSettings: exposure/gain/white-balance snapshot
 │   ├── change_detector.hpp/.cpp   # ChangeDetector: frame diff → changed %
 │   ├── state_machine.hpp/.cpp     # StateMachine: STABLE/CHANGING/WAIT_FOR_STABLE
 │   ├── snapshot_writer.hpp/.cpp   # SnapshotWriter: before/after jpg + metadata.json
 │   ├── frame_quality.hpp/.cpp     # computeSharpness(): shared by SnapshotWriter + FrameHistory
 │   ├── ring_buffer.hpp            # RingBuffer<T>: generic fixed-capacity circular buffer
 │   ├── frame_history.hpp/.cpp     # FrameHistory: recent-frames window + best-frame-in-range
-│   └── blocking_queue.hpp         # BlockingQueue<T>: thread-safe producer/consumer queue
+│   ├── blocking_queue.hpp         # BlockingQueue<T>: thread-safe producer/consumer queue
+│   ├── git_info.hpp/.cpp          # captureGitInfo(): git rev-parse/status via popen
+│   └── commit_metadata.hpp/.cpp   # reads metadata.json back into a struct (for palim-timeline)
+├── tests/                    # GTest suite, see "Testing" below
 └── commits/                  # runtime output, gitignored
     └── 001/
         ├── before.jpg
@@ -51,8 +57,12 @@ palim/
 ```
 
 Flat `src/` on purpose — the file count still doesn't justify
-`capture/`/`processing/`/`state/` subfolders. We'll split it out when
-multithreading actually adds enough files to need it.
+`capture/`/`processing/`/`state/` subfolders. We'll split it out if it
+ever actually gets unwieldy.
+
+All of the above except `main.cpp` and `timeline_main.cpp` builds into a
+static library, `palim_lib`, that both executables and the test suite
+link against — see "Testing" below.
 
 ## Class responsibilities
 
@@ -383,6 +393,40 @@ Verified: two synthetic `metadata.json` pairs — one with a different
 commit hash and a newly-dirty file (confirms the diff renders exactly
 those two things), and one that's identical (confirms it correctly
 prints nothing rather than a false-positive diff).
+
+## Phase 7: GTest suite (section 19)
+
+Every scratch/ad-hoc test used to verify earlier phases (frame-diff math,
+`StateMachine` transitions, `RingBuffer` wraparound, `FrameHistory`
+best-frame selection, `BlockingQueue` concurrency, `GitInfo`,
+`commit_metadata` parsing, `Camera`'s failure paths) has been ported
+into a permanent GTest suite under `tests/`, built as `palim_tests` and
+registered with CTest via `gtest_discover_tests`.
+
+This required one structural change: `main.cpp` and `timeline_main.cpp`
+used to each list every `.cpp` file they needed directly. Now all of
+that logic (everything except the two `main()`s) lives in a static
+library, `palim_lib`, that `palim`, `palim-timeline`, and `palim_tests`
+all link against — so the same code isn't compiled three times, and
+tests exercise the exact objects the real binaries ship.
+
+Notable test design points:
+
+- `BlockingQueue` tests include real concurrency (a consumer thread that
+  genuinely blocks until `push()`, a 5000-item concurrent
+  producer/consumer with an ordering + no-loss check) — passing both
+  normally and under ThreadSanitizer.
+- `GitInfo` tests change the process's working directory (`git` runs
+  against cwd) and restore it via an RAII guard, so a failed assertion
+  can't leave a later test running from the wrong directory.
+- `Camera` tests only cover failure paths (no device, a non-V4L2 device)
+  since no physical camera is available in this environment;
+  `Camera::grab()` against real hardware is explicitly *not* covered
+  here and needs manual verification once real hardware is available.
+
+`-DPALIM_BUILD_TESTS=OFF` skips building the suite (and its GTest
+dependency) entirely, for anyone who just wants the two runtime
+binaries.
 
 ## Explicitly deferred (not forgotten — see spec for full detail)
 

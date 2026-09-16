@@ -102,16 +102,35 @@ installed.
 ## Building
 
 Requires a C++17 compiler, CMake ≥ 3.16, pthreads, Linux V4L2 headers
-(already present on most distros via the kernel headers package), and
-OpenCV (`core`, `imgproc`, `highgui`, `imgcodecs`).
+(already present on most distros via the kernel headers package),
+OpenCV (`core`, `imgproc`, `highgui`, `imgcodecs`), and GTest for the
+test suite (optional — see below).
 
 ```sh
 # Debian/Ubuntu
-sudo apt-get install libopencv-dev cmake build-essential linux-libc-dev
+sudo apt-get install libopencv-dev cmake build-essential linux-libc-dev libgtest-dev
 
 cmake -S . -B build
 cmake --build build
 ```
+
+This produces three binaries: `palim` (the capture pipeline),
+`palim-timeline` (the CLI viewer, below), and `palim_tests`.
+
+## Testing
+
+```sh
+cmake --build build --target palim_tests
+ctest --test-dir build            # or: ./build/palim_tests
+```
+
+Covers `ChangeDetector`, `StateMachine`, `RingBuffer`, `FrameHistory`,
+`BlockingQueue` (including concurrent producer/consumer and
+ThreadSanitizer-clean shutdown behavior), `GitInfo`, `commit_metadata`
+parsing, and `Camera`'s failure paths (no device present, a non-V4L2
+device). `Camera::grab()` against real hardware isn't covered here —
+that needs an actual camera. Pass `-DPALIM_BUILD_TESTS=OFF` to `cmake`
+to skip building the test suite (and its GTest dependency) entirely.
 
 ## Running
 
@@ -153,6 +172,7 @@ Sections referenced below are from the original project spec; see
 - [x] Richer V4L2 metadata (exposure, gain, white balance) per commit (Phase 5)
 - [x] Timeline CLI (`palim-timeline`) (Phase 6)
 - [x] "What changed?" diffing for Git state (commit + dirty files) between commits (Phase 6.1)
+- [x] GTest suite covering all of the above (Phase 7)
 - [ ] "What changed?" diffing for the physical side (needs image understanding, not just metadata)
 - [ ] "Possible cause" debugging suggestions
 
