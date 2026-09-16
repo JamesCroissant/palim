@@ -35,8 +35,7 @@ physical change on the desk → detected → before/after frames + metadata save
 ```
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full design
-rationale, what's implemented, and what's deliberately deferred (a
-timeline UI and more).
+rationale and what's implemented.
 
 ## How it works
 
@@ -129,6 +128,17 @@ supports YUYV capture should work. Linux-only — there's no cross-platform
 abstraction here on purpose (see the project's own learning goals in
 `docs/ARCHITECTURE.md`).
 
+### Viewing the timeline
+
+```sh
+./build/palim-timeline            # reads ./commits by default
+./build/palim-timeline path/to/commits
+```
+
+Prints each commit's change score, sharpness, camera settings, and Git
+state in order, calling out any camera setting that changed since the
+previous commit.
+
 ## Roadmap
 
 Sections referenced below are from the original project spec; see
@@ -141,8 +151,8 @@ Sections referenced below are from the original project spec; see
 - [x] Git integration (pair each physical commit with the current
       `git rev-parse HEAD` and dirty-file list) (Phase 4)
 - [x] Richer V4L2 metadata (exposure, gain, white balance) per commit (Phase 5)
-- [ ] Timeline UI
-- [ ] "What changed?" diffing across physical + software state
+- [x] Timeline CLI (`palim-timeline`) (Phase 6)
+- [ ] "What changed?" diffing / debugging support across physical + software state
 
 ## License
 

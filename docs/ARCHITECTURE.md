@@ -1,10 +1,9 @@
 # palim — Phase 1 MVP Architecture
 
 Status: Phase 1 (Steps 1–5), Phase 1.5 (ring buffer + best-frame
-selection), Phase 2 (raw V4L2 capture), Phase 3 (multithreading), and
-Phase 4 (Git integration), and Phase 5 (V4L2 control metadata) are
-implemented. This document exists to
-agree on the
+selection), Phase 2 (raw V4L2 capture), Phase 3 (multithreading),
+Phase 4 (Git integration), Phase 5 (V4L2 control metadata), and
+Phase 6 (timeline CLI) are implemented. This document exists to agree on the
 shape of the system *before* writing code, per the project's own philosophy
 of understanding each layer (camera → kernel → V4L2 → buffer → OpenCV →
 processing → event → storage) rather than hiding it behind a library.
@@ -321,6 +320,49 @@ was checked with both a fully-populated `CameraSettings` and an
 all-`nullopt` one, confirming valid JSON (with `null` literals, not
 missing keys) in both cases.
 
+## Phase 6: timeline CLI (section 16)
+
+The spec itself says the timeline view can start as a CLI — no GUI
+framework needed yet. `palim-timeline` is a second, separate executable
+(no OpenCV dependency at all) that reads `commits/NNN/metadata.json` and
+prints a chronological summary:
+
+```
+Experiment Timeline
+
+#001  2026-09-16T00:52:13
+  change: 12.3%   sharpness: 0
+  camera: 1280x720  exposure=400  gain=16  wb=4600K
+  git: 331e6ed (4 dirty files)
+
+        |
+        exposure: 400 -> 220
+        v
+
+#002  ...
+```
+
+Between consecutive commits it also calls out any camera setting that
+changed (exposure, gain, white balance) — the "Exposure: 400 → 220"
+style annotation from the spec's own example.
+
+`commit_metadata.hpp/.cpp` parses `metadata.json` back into a
+`CommitMetadata` struct. This is deliberately *not* a general JSON
+parser: it works by searching for each field's unique key name
+(`"exposure_absolute":`, `"dirty_files":`, etc.) directly in the file
+text, which is only safe because every key `SnapshotWriter` emits is
+unique across the whole document — there's no need to track which
+nested object (`camera`, `git`) a key belongs to. This is intentionally
+narrow: it reads back exactly the shape `SnapshotWriter` produces,
+nothing more general.
+
+Verified: generated a synthetic `commits/` directory (via
+`SnapshotWriter` directly) with camera settings changing across three
+commits, and confirmed `palim-timeline` both displays each commit's data
+correctly and detects the between-commit setting changes accurately;
+also confirmed the empty-directory and missing-directory cases print a
+clear message instead of crashing or printing nothing.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
-- Timeline UI (section 16)
+- "What changed?" diffing / debugging support across physical + software state (spec section 4)
