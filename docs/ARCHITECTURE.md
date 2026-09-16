@@ -2,8 +2,9 @@
 
 Status: Phase 1 (Steps 1–5), Phase 1.5 (ring buffer + best-frame
 selection), Phase 2 (raw V4L2 capture), Phase 3 (multithreading),
-Phase 4 (Git integration), Phase 5 (V4L2 control metadata), and
-Phase 6 (timeline CLI) are implemented. This document exists to agree on the
+Phase 4 (Git integration), Phase 5 (V4L2 control metadata),
+Phase 6 (timeline CLI), and Phase 6.1 (software-side "what changed?"
+diffing) are implemented. This document exists to agree on the
 shape of the system *before* writing code, per the project's own philosophy
 of understanding each layer (camera → kernel → V4L2 → buffer → OpenCV →
 processing → event → storage) rather than hiding it behind a library.
@@ -363,6 +364,27 @@ correctly and detects the between-commit setting changes accurately;
 also confirmed the empty-directory and missing-directory cases print a
 clear message instead of crashing or printing nothing.
 
+## Phase 6.1: "what changed?" — software side (spec section 4)
+
+`palim-timeline` also diffs consecutive commits' Git state: if the
+commit hash moved, it prints `git: <short a> -> <short b>`; if any file
+became dirty that wasn't in the previous commit's `dirty_files`, it's
+listed under `newly modified`. This is pure comparison of two already-
+recorded `metadata.json` snapshots — no `git diff` or other command is
+re-run, and there's no attempt to guess *why* something changed (the
+spec's "possible cause" idea is real future work, not attempted here).
+
+Physical-side "what changed?" (inferring *what* changed about the desk
+itself, not just that the frame differs) stays deferred — it needs
+either object detection or a human looking at `before.jpg`/`after.jpg`,
+neither of which this phase adds.
+
+Verified: two synthetic `metadata.json` pairs — one with a different
+commit hash and a newly-dirty file (confirms the diff renders exactly
+those two things), and one that's identical (confirms it correctly
+prints nothing rather than a false-positive diff).
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
-- "What changed?" diffing / debugging support across physical + software state (spec section 4)
+- Physical-side "what changed?" (needs image understanding, not just diffing recorded metadata) (spec section 4)
+- "Possible cause" debugging suggestions (spec section 4)

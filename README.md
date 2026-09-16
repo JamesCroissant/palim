@@ -136,8 +136,8 @@ abstraction here on purpose (see the project's own learning goals in
 ```
 
 Prints each commit's change score, sharpness, camera settings, and Git
-state in order, calling out any camera setting that changed since the
-previous commit.
+state in order, calling out any camera setting or Git state (commit
+hash, newly modified files) that changed since the previous commit.
 
 ## Roadmap
 
@@ -152,7 +152,9 @@ Sections referenced below are from the original project spec; see
       `git rev-parse HEAD` and dirty-file list) (Phase 4)
 - [x] Richer V4L2 metadata (exposure, gain, white balance) per commit (Phase 5)
 - [x] Timeline CLI (`palim-timeline`) (Phase 6)
-- [ ] "What changed?" diffing / debugging support across physical + software state
+- [x] "What changed?" diffing for Git state (commit + dirty files) between commits (Phase 6.1)
+- [ ] "What changed?" diffing for the physical side (needs image understanding, not just metadata)
+- [ ] "Possible cause" debugging suggestions
 
 ## License
 
