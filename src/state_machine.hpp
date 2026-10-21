@@ -26,6 +26,11 @@ struct CommitEvent {
     cv::Mat before;
     cv::Mat after;
     double changeScore;  // the changed-% reading that triggered CHANGING
+    // Bounding box of where that same changed-% reading was concentrated,
+    // in the coordinate space of the frame that produced it. nullopt
+    // under the same condition ChangeDetector::compareWithRegion()
+    // reports it: no pixel crossed the detector's threshold.
+    std::optional<cv::Rect> changedRegion;
     std::chrono::steady_clock::time_point stableWindowStart;
     std::chrono::steady_clock::time_point stableWindowEnd;
     CameraSettings settings;
@@ -39,11 +44,11 @@ class StateMachine {
 public:
     StateMachine(double changeThresholdPercent, std::chrono::milliseconds stableDuration);
 
-    // Call once per frame with the change-% relative to the previous
-    // frame. Returns a CommitEvent only on the frame that completes a
-    // stable period after a change.
-    std::optional<CommitEvent> update(double changedPercent, const cv::Mat& frame,
-                                       std::chrono::steady_clock::time_point now,
+    // Call once per frame with the change-% (and, if any, the changed
+    // region) relative to the previous frame. Returns a CommitEvent only
+    // on the frame that completes a stable period after a change.
+    std::optional<CommitEvent> update(double changedPercent, std::optional<cv::Rect> changedRegion,
+                                       const cv::Mat& frame, std::chrono::steady_clock::time_point now,
                                        const CameraSettings& settings);
 
 private:

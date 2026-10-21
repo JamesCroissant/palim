@@ -13,9 +13,10 @@ protected:
     cv::Mat frame{10, 10, CV_8UC3, cv::Scalar(0, 0, 0)};
     palim::CameraSettings settings;
 
-    std::optional<palim::CommitEvent> tick(double changedPercent, std::chrono::milliseconds advance) {
+    std::optional<palim::CommitEvent> tick(double changedPercent, std::chrono::milliseconds advance,
+                                            std::optional<cv::Rect> changedRegion = std::nullopt) {
         now += advance;
-        return sm.update(changedPercent, frame, now, settings);
+        return sm.update(changedPercent, changedRegion, frame, now, settings);
     }
 };
 
@@ -58,6 +59,27 @@ TEST_F(StateMachineTest, CommitsOnceStableDurationElapsesAfterChange) {
     auto result = tick(0.0, 111ms);
     ASSERT_TRUE(result.has_value());
     EXPECT_DOUBLE_EQ(result->changeScore, 0.0);
+}
+
+TEST_F(StateMachineTest, CommitEventHasNoRegionWhenItsTriggeringTickHadNone) {
+    tick(0.0, 10ms);
+    tick(20.0, 10ms);                      // Stable -> Changing
+    tick(0.0, 10ms);                       // Changing -> WaitForStable (stableSince_ set here)
+    auto result = tick(0.0, 210ms);        // no region passed
+    ASSERT_TRUE(result.has_value());
+    EXPECT_FALSE(result->changedRegion.has_value());
+}
+
+TEST_F(StateMachineTest, CommitEventReflectsARegionOnTheExactTriggeringTick) {
+    const cv::Rect region(10, 20, 30, 40);
+    tick(0.0, 10ms);
+    tick(20.0, 10ms);                      // Stable -> Changing
+    tick(0.0, 10ms);                       // Changing -> WaitForStable (stableSince_ set here)
+    // The commit-producing tick itself carries a region this time.
+    auto result = tick(0.0, 210ms, region);
+    ASSERT_TRUE(result.has_value());
+    ASSERT_TRUE(result->changedRegion.has_value());
+    EXPECT_EQ(*result->changedRegion, region);
 }
 
 TEST_F(StateMachineTest, ReturnsToStableAfterCommitAndDoesNotDoubleCommit) {

@@ -63,6 +63,20 @@ double extractDouble(const std::string& json, const std::string& key) {
     return raw ? std::stod(*raw) : 0.0;
 }
 
+std::optional<ChangedRegion> extractChangedRegion(const std::string& json) {
+    // All four or none: "changed_region" is written as either a whole
+    // object or the single token `null` (see SnapshotWriter), never
+    // partially populated.
+    const auto x = extractOptionalInt(json, "region_x");
+    const auto y = extractOptionalInt(json, "region_y");
+    const auto w = extractOptionalInt(json, "region_w");
+    const auto h = extractOptionalInt(json, "region_h");
+    if (!x || !y || !w || !h) {
+        return std::nullopt;
+    }
+    return ChangedRegion{*x, *y, *w, *h};
+}
+
 std::vector<std::string> extractStringArray(const std::string& json, const std::string& key) {
     std::vector<std::string> result;
     const std::string needle = "\"" + key + "\":";
@@ -109,6 +123,7 @@ std::optional<CommitMetadata> readCommitMetadata(const std::filesystem::path& co
     m.timestamp = extractRawValue(json, "timestamp").value_or("");
     m.changeScore = extractDouble(json, "change_score");
     m.sharpnessScore = extractDouble(json, "sharpness_score");
+    m.changedRegion = extractChangedRegion(json);
     m.width = static_cast<int>(extractDouble(json, "width"));
     m.height = static_cast<int>(extractDouble(json, "height"));
     m.exposureAuto = extractOptionalInt(json, "exposure_auto");

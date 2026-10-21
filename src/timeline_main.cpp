@@ -65,6 +65,10 @@ void printGitChange(const palim::CommitMetadata& before, const palim::CommitMeta
 void printCommit(const palim::CommitMetadata& c) {
     std::cout << "#" << c.id << "  " << c.timestamp << "\n";
     std::cout << "  change: " << c.changeScore << "%   sharpness: " << c.sharpnessScore << "\n";
+    if (c.changedRegion) {
+        const auto& r = *c.changedRegion;
+        std::cout << "  region: (" << r.x << "," << r.y << ") " << r.width << "x" << r.height << "\n";
+    }
     std::cout << "  camera: " << c.width << "x" << c.height;
     if (c.exposureAbsolute) {
         std::cout << "  exposure=" << *c.exposureAbsolute;

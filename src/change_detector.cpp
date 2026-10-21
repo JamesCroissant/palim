@@ -16,20 +16,42 @@ cv::Mat ChangeDetector::preprocess(const cv::Mat& frame, int blurKernelSize) {
     return blurred;
 }
 
-double ChangeDetector::compare(const cv::Mat& prevFrame, const cv::Mat& currFrame) const {
+cv::Mat ChangeDetector::changedMask(const cv::Mat& prevFrame, const cv::Mat& currFrame) const {
     cv::Mat prevProcessed = preprocess(prevFrame, blurKernelSize_);
     cv::Mat currProcessed = preprocess(currFrame, blurKernelSize_);
 
     cv::Mat diff;
     cv::absdiff(prevProcessed, currProcessed, diff);
 
-    cv::Mat changedMask;
-    cv::threshold(diff, changedMask, pixelDiffThreshold_, 255, cv::THRESH_BINARY);
+    cv::Mat mask;
+    cv::threshold(diff, mask, pixelDiffThreshold_, 255, cv::THRESH_BINARY);
+    return mask;
+}
 
-    const int changedPixels = cv::countNonZero(changedMask);
-    const int totalPixels = changedMask.rows * changedMask.cols;
+double ChangeDetector::compare(const cv::Mat& prevFrame, const cv::Mat& currFrame) const {
+    const cv::Mat mask = changedMask(prevFrame, currFrame);
+
+    const int changedPixels = cv::countNonZero(mask);
+    const int totalPixels = mask.rows * mask.cols;
 
     return (static_cast<double>(changedPixels) / totalPixels) * 100.0;
+}
+
+ChangeResult ChangeDetector::compareWithRegion(const cv::Mat& prevFrame, const cv::Mat& currFrame) const {
+    const cv::Mat mask = changedMask(prevFrame, currFrame);
+
+    const int changedPixels = cv::countNonZero(mask);
+    const int totalPixels = mask.rows * mask.cols;
+
+    ChangeResult result;
+    result.changedPercent = (static_cast<double>(changedPixels) / totalPixels) * 100.0;
+    // boundingRect on an all-zero mask returns Rect(0,0,0,0) -- a
+    // zero-area rectangle isn't a meaningful "where", so only report one
+    // when something actually crossed the threshold.
+    if (changedPixels > 0) {
+        result.changedRegion = cv::boundingRect(mask);
+    }
+    return result;
 }
 
 }  // namespace palim

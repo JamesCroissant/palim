@@ -61,6 +61,83 @@ TEST_F(CommitMetadataTest, ParsesAFullyPopulatedDocument) {
     EXPECT_EQ(m->dirtyFiles, (std::vector<std::string>{"src/capture.cpp", "src/buffer.cpp"}));
 }
 
+TEST_F(CommitMetadataTest, ParsesAChangedRegion) {
+    writeMetadata(R"({
+  "timestamp": "2026-09-16T00:52:13",
+  "change_score": 42.5,
+  "sharpness_score": 1201.63,
+  "changed_region": {
+    "region_x": 120,
+    "region_y": 45,
+    "region_w": 300,
+    "region_h": 220
+  },
+  "camera": {
+    "width": 1280,
+    "height": 720,
+    "exposure_auto": null,
+    "exposure_absolute": null,
+    "gain": null,
+    "white_balance_auto": null,
+    "white_balance_temperature": null
+  },
+  "git": {
+    "available": false
+  }
+})");
+
+    auto m = palim::readCommitMetadata(dir);
+    ASSERT_TRUE(m.has_value());
+    ASSERT_TRUE(m->changedRegion.has_value());
+    EXPECT_EQ(m->changedRegion->x, 120);
+    EXPECT_EQ(m->changedRegion->y, 45);
+    EXPECT_EQ(m->changedRegion->width, 300);
+    EXPECT_EQ(m->changedRegion->height, 220);
+    // The region's own x/y/w/h must not have been confused with the
+    // "camera" object's unrelated width/height -- exactly the collision
+    // SnapshotWriter's region_* naming exists to avoid.
+    EXPECT_EQ(m->width, 1280);
+    EXPECT_EQ(m->height, 720);
+}
+
+TEST_F(CommitMetadataTest, NullChangedRegionBecomesNullopt) {
+    writeMetadata(R"({
+  "timestamp": "2026-09-16T00:52:13",
+  "change_score": 0,
+  "sharpness_score": 0,
+  "changed_region": null,
+  "camera": {
+    "width": 640, "height": 480, "exposure_auto": null, "exposure_absolute": null,
+    "gain": null, "white_balance_auto": null, "white_balance_temperature": null
+  },
+  "git": {"available": false}
+})");
+
+    auto m = palim::readCommitMetadata(dir);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_FALSE(m->changedRegion.has_value());
+}
+
+// Older metadata.json files (written before this field existed) have no
+// "changed_region" key at all -- has to parse as "no region", not crash
+// or throw.
+TEST_F(CommitMetadataTest, MissingChangedRegionKeyBecomesNullopt) {
+    writeMetadata(R"({
+  "timestamp": "2026-09-16T00:52:13",
+  "change_score": 0,
+  "sharpness_score": 0,
+  "camera": {
+    "width": 640, "height": 480, "exposure_auto": null, "exposure_absolute": null,
+    "gain": null, "white_balance_auto": null, "white_balance_temperature": null
+  },
+  "git": {"available": false}
+})");
+
+    auto m = palim::readCommitMetadata(dir);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_FALSE(m->changedRegion.has_value());
+}
+
 TEST_F(CommitMetadataTest, NullCameraControlsBecomeNullopt) {
     writeMetadata(R"({
   "timestamp": "2026-09-16T00:00:00",

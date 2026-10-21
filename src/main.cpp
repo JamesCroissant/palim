@@ -96,9 +96,9 @@ int main() {
             frameHistory.push(sample->frame, sample->timestamp);
 
             if (prevFrame) {
-                const double changedPercent = detector.compare(*prevFrame, sample->frame);
-                std::cout << "changed: " << changedPercent << "%\n";
-                if (changedPercent > kChangeThresholdPercent) {
+                const auto changeResult = detector.compareWithRegion(*prevFrame, sample->frame);
+                std::cout << "changed: " << changeResult.changedPercent << "%\n";
+                if (changeResult.changedPercent > kChangeThresholdPercent) {
                     std::cout << "CHANGE DETECTED\n";
                 }
 
@@ -106,8 +106,8 @@ int main() {
                 // queue between capture and here can add latency, and
                 // stability should be measured against when things
                 // actually happened on the desk.
-                auto commit =
-                    stateMachine.update(changedPercent, sample->frame, sample->timestamp, sample->settings);
+                auto commit = stateMachine.update(changeResult.changedPercent, changeResult.changedRegion,
+                                                   sample->frame, sample->timestamp, sample->settings);
                 if (commit) {
                     if (auto best =
                             frameHistory.bestFrameInRange(commit->stableWindowStart, commit->stableWindowEnd)) {

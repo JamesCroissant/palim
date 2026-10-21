@@ -428,7 +428,73 @@ Notable test design points:
 dependency) entirely, for anyone who just wants the two runtime
 binaries.
 
+## Phase 8: changed-region localization — physical side, step one (spec section 4)
+
+Phase 6.1 diffed the *software* side (Git state) between commits. The
+physical side was left fully deferred because "what changed on the
+desk" sounds like it needs object recognition. It doesn't, not for a
+useful first step: `ChangeDetector` already computes a per-pixel diff
+mask to get its percentage — it was just throwing away *where* those
+pixels were. `cv::boundingRect()` on that same mask gives a bounding
+box around the changed area for free, no new model or dependency.
+
+`ChangeDetector` gained `compareWithRegion()` alongside the existing
+`compare()` (which keeps its original signature and behavior
+unchanged — nothing that called `compare()` needed to change). Both
+share a new private `changedMask()` helper that factors out the
+preprocess → absdiff → threshold steps `compare()` already did.
+`compareWithRegion()` additionally returns the mask's `boundingRect()`
+as `std::optional<cv::Rect>`, left unset when nothing crossed the
+threshold (an all-zero mask's bounding rect is the meaningless
+`Rect(0,0,0,0)`).
+
+The region flows through the rest of the pipeline the same way the
+change percentage already did: `main.cpp`'s processing loop now calls
+`compareWithRegion()` and passes the resulting region into
+`StateMachine::update()`, which stores it on the `CommitEvent` it
+eventually emits — specifically, the region from the exact tick whose
+stable-window wait completes and triggers the commit, not an earlier
+or later one. `SnapshotWriter` writes it into `metadata.json` as a
+`changed_region` object (`region_x`/`region_y`/`region_w`/`region_h`,
+or `null` when there wasn't one) and, when present, also writes
+`after_annotated.jpg` — the "after" frame with the region drawn on it
+in red, so a human can see at a glance where `palim` thinks the change
+was without opening an image viewer and comparing two files by eye.
+
+The `region_*` key names are deliberate, not cosmetic: `commit_metadata`'s
+JSON reader finds `"key":` anywhere in the whole document text rather
+than tracking which object it's nested in, so reusing `x`/`y`/`width`/
+`height` here would collide with the `camera` block's own `width`/
+`height`. `commit_metadata.hpp` represents a parsed region as a plain
+`ChangedRegion{x, y, width, height}` struct rather than `cv::Rect`,
+keeping `commit_metadata`/`palim-timeline` free of an OpenCV dependency
+they've never needed. `palim-timeline` prints the region (position and
+size) under each commit that has one.
+
+Older `metadata.json` files written before this phase have no
+`changed_region` key at all; the parser treats a missing key exactly
+like an explicit `null` — both become `std::nullopt` — so existing
+commit histories keep reading correctly.
+
+Verified: `ChangeDetectorRegion` tests cover identical frames (no
+region), a region-less frame reporting the same percentage
+`compare()` would, and a change confined to one corner producing a
+tight bounding box close to that corner rather than the whole frame.
+`StateMachineTest` confirms a `CommitEvent` carries the region from its
+*triggering* tick specifically, not an earlier changing-phase tick.
+`CommitMetadataTest` covers a populated region, an explicit `null`,
+and a missing key, the last guarding backward compatibility with
+pre-Phase-8 commits. All passed; deliberately breaking
+`compareWithRegion()`'s region assignment (disabling it unconditionally)
+caused exactly `ChangeDetectorRegion.LocalizedChangeReportsATightBoundingBox`
+to fail, confirming the test is actually exercising the new code path,
+not passing vacuously.
+
+This is a bounding box, not object recognition — it answers "roughly
+where" but not "what" the changed object is. That's still future work;
+see below.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
-- Physical-side "what changed?" (needs image understanding, not just diffing recorded metadata) (spec section 4)
+- Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)
 - "Possible cause" debugging suggestions (spec section 4)

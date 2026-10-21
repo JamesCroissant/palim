@@ -5,9 +5,9 @@ namespace palim {
 StateMachine::StateMachine(double changeThresholdPercent, std::chrono::milliseconds stableDuration)
     : changeThresholdPercent_(changeThresholdPercent), stableDuration_(stableDuration) {}
 
-std::optional<CommitEvent> StateMachine::update(double changedPercent, const cv::Mat& frame,
-                                                  std::chrono::steady_clock::time_point now,
-                                                  const CameraSettings& settings) {
+std::optional<CommitEvent> StateMachine::update(double changedPercent, std::optional<cv::Rect> changedRegion,
+                                                 const cv::Mat& frame, std::chrono::steady_clock::time_point now,
+                                                 const CameraSettings& settings) {
     std::optional<CommitEvent> event;
     const bool changing = changedPercent > changeThresholdPercent_;
 
@@ -35,7 +35,7 @@ std::optional<CommitEvent> StateMachine::update(double changedPercent, const cv:
                 // it as still one continuous change.
                 state_ = State::Changing;
             } else if (now - stableSince_ >= stableDuration_) {
-                event = CommitEvent{beforeFrame_, frame, changedPercent, stableSince_, now, settings};
+                event = CommitEvent{beforeFrame_, frame, changedPercent, changedRegion, stableSince_, now, settings};
                 state_ = State::Stable;
             }
             break;

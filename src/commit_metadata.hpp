@@ -7,6 +7,17 @@
 
 namespace palim {
 
+// Mirrors SnapshotWriter's "changed_region" object. Deliberately a plain
+// struct, not cv::Rect: commit_metadata.hpp/.cpp (and palim-timeline,
+// which links against them) have no OpenCV dependency, and this is the
+// only field that would otherwise need one.
+struct ChangedRegion {
+    int x = 0;
+    int y = 0;
+    int width = 0;
+    int height = 0;
+};
+
 // Mirrors exactly what SnapshotWriter writes to metadata.json. Parsed by
 // commit_metadata.cpp's small, purpose-built reader -- not a general
 // JSON parser, just enough string-searching to read our own fixed
@@ -16,6 +27,7 @@ struct CommitMetadata {
     std::string timestamp;
     double changeScore = 0.0;
     double sharpnessScore = 0.0;
+    std::optional<ChangedRegion> changedRegion;
 
     int width = 0;
     int height = 0;

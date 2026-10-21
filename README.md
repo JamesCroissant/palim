@@ -67,6 +67,7 @@ commits/
 └── 001/
     ├── before.jpg
     ├── after.jpg
+    ├── after_annotated.jpg   # only when a changed region was localized
     └── metadata.json
 ```
 
@@ -75,6 +76,12 @@ commits/
   "timestamp": "2026-09-15T09:22:08",
   "change_score": 42.5,
   "sharpness_score": 1197.52,
+  "changed_region": {
+    "region_x": 412,
+    "region_y": 198,
+    "region_w": 230,
+    "region_h": 160
+  },
   "camera": {
     "width": 1280,
     "height": 720,
@@ -97,7 +104,11 @@ control the device doesn't support reads as `null` rather than failing
 the whole commit. The `git` block reflects whatever repo `palim` is run
 from (`git` subprocess calls in the current working directory) —
 `available: false` if it's not run inside a Git repo, or `git` isn't
-installed.
+installed. `changed_region` is a bounding box around the pixels that
+actually changed (`null` when nothing crossed the detection
+threshold, or absent entirely in commits made before this field
+existed) — when present, `after_annotated.jpg` shows that box drawn on
+the "after" frame.
 
 ## Building
 
@@ -124,13 +135,15 @@ cmake --build build --target palim_tests
 ctest --test-dir build            # or: ./build/palim_tests
 ```
 
-Covers `ChangeDetector`, `StateMachine`, `RingBuffer`, `FrameHistory`,
-`BlockingQueue` (including concurrent producer/consumer and
-ThreadSanitizer-clean shutdown behavior), `GitInfo`, `commit_metadata`
-parsing, and `Camera`'s failure paths (no device present, a non-V4L2
-device). `Camera::grab()` against real hardware isn't covered here —
-that needs an actual camera. Pass `-DPALIM_BUILD_TESTS=OFF` to `cmake`
-to skip building the test suite (and its GTest dependency) entirely.
+Covers `ChangeDetector` (including changed-region bounding boxes),
+`StateMachine`, `RingBuffer`, `FrameHistory`, `BlockingQueue`
+(including concurrent producer/consumer and ThreadSanitizer-clean
+shutdown behavior), `GitInfo`, `commit_metadata` parsing (including
+`changed_region`, its `null` form, and its absence in older commits),
+and `Camera`'s failure paths (no device present, a non-V4L2 device).
+`Camera::grab()` against real hardware isn't covered here — that needs
+an actual camera. Pass `-DPALIM_BUILD_TESTS=OFF` to `cmake` to skip
+building the test suite (and its GTest dependency) entirely.
 
 ## Running
 
@@ -154,9 +167,10 @@ abstraction here on purpose (see the project's own learning goals in
 ./build/palim-timeline path/to/commits
 ```
 
-Prints each commit's change score, sharpness, camera settings, and Git
-state in order, calling out any camera setting or Git state (commit
-hash, newly modified files) that changed since the previous commit.
+Prints each commit's change score, sharpness, changed region (when
+one was localized), camera settings, and Git state in order, calling
+out any camera setting or Git state (commit hash, newly modified
+files) that changed since the previous commit.
 
 ## Roadmap
 
@@ -173,7 +187,8 @@ Sections referenced below are from the original project spec; see
 - [x] Timeline CLI (`palim-timeline`) (Phase 6)
 - [x] "What changed?" diffing for Git state (commit + dirty files) between commits (Phase 6.1)
 - [x] GTest suite covering all of the above (Phase 7)
-- [ ] "What changed?" diffing for the physical side (needs image understanding, not just metadata)
+- [x] Changed-region localization: bounding box of *where* the frame changed, drawn on a saved `after_annotated.jpg` (Phase 8)
+- [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 
 ## License

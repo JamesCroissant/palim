@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <opencv2/imgcodecs.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "frame_quality.hpp"
 #include "git_info.hpp"
@@ -58,6 +59,17 @@ void SnapshotWriter::write(const CommitEvent& event) {
     cv::imwrite((dir / "before.jpg").string(), event.before);
     cv::imwrite((dir / "after.jpg").string(), event.after);
 
+    // A visible answer to "where did it change?" alongside the metadata
+    // one: a copy of `after` with the changed region boxed, rather than
+    // drawing on `after.jpg` itself -- computeSharpness() below and any
+    // future consumer of the raw frame should still see exactly what the
+    // camera captured, not an annotated version of it.
+    if (event.changedRegion) {
+        cv::Mat annotated = event.after.clone();
+        cv::rectangle(annotated, *event.changedRegion, cv::Scalar(0, 0, 255), 2);
+        cv::imwrite((dir / "after_annotated.jpg").string(), annotated);
+    }
+
     const std::string timestamp = formatTimestamp(std::chrono::system_clock::now());
     const double sharpness = computeSharpness(event.after);
     const GitInfo git = captureGitInfo();
@@ -68,8 +80,25 @@ void SnapshotWriter::write(const CommitEvent& event) {
     meta << "{\n"
          << "  \"timestamp\": \"" << timestamp << "\",\n"
          << "  \"change_score\": " << event.changeScore << ",\n"
-         << "  \"sharpness_score\": " << sharpness << ",\n"
-         << "  \"camera\": {\n"
+         << "  \"sharpness_score\": " << sharpness << ",\n";
+    // region_x/y/w/h, not x/y/width/height: the "camera" object below
+    // already owns "width"/"height" as unique top-level key names, and
+    // commit_metadata.cpp's reader finds a key anywhere in the whole
+    // document rather than tracking which nested object it's in -- see
+    // its own comment. Reusing "width"/"height" here would make it read
+    // back the wrong one.
+    if (event.changedRegion) {
+        const cv::Rect& r = *event.changedRegion;
+        meta << "  \"changed_region\": {\n"
+             << "    \"region_x\": " << r.x << ",\n"
+             << "    \"region_y\": " << r.y << ",\n"
+             << "    \"region_w\": " << r.width << ",\n"
+             << "    \"region_h\": " << r.height << "\n"
+             << "  },\n";
+    } else {
+        meta << "  \"changed_region\": null,\n";
+    }
+    meta << "  \"camera\": {\n"
          << "    \"width\": " << cam.width << ",\n"
          << "    \"height\": " << cam.height << ",\n"
          << "    \"exposure_auto\": " << jsonOptionalInt(cam.exposureAuto) << ",\n"
