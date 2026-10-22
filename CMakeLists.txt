@@ -23,6 +23,7 @@ add_library(palim_lib STATIC
     src/frame_history.cpp
     src/git_info.cpp
     src/commit_metadata.cpp
+    src/config.cpp
 )
 target_include_directories(palim_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(palim_lib PUBLIC ${OpenCV_LIBS} Threads::Threads)
@@ -47,6 +48,7 @@ if(PALIM_BUILD_TESTS)
         tests/test_git_info.cpp
         tests/test_commit_metadata.cpp
         tests/test_camera.cpp
+        tests/test_config.cpp
     )
     target_link_libraries(palim_tests PRIVATE palim_lib GTest::gtest GTest::gtest_main)
     # So test_git_info.cpp can cd into a directory known to be a git repo

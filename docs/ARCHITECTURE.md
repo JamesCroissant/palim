@@ -494,6 +494,42 @@ This is a bounding box, not object recognition — it answers "roughly
 where" but not "what" the changed object is. That's still future work;
 see below.
 
+## Phase 9: CLI configurability
+
+Every tunable `main()` actually had — camera device path, capture
+resolution, the change-threshold percentage, the stable-duration
+window, and the commits output directory — was a hardcoded constant or
+literal, even though every class involved (`Camera`, `StateMachine`,
+`SnapshotWriter`) already took these as constructor parameters.
+Changing any of them meant editing `main.cpp` and recompiling.
+
+A new `Config` struct (`src/config.hpp`/`.cpp`) holds all five fields
+with their previous hardcoded values as defaults, and a free function
+`parseArgs(const std::vector<std::string>&)` builds one from CLI
+arguments: `--device`, `--width`, `--height`, `--threshold`,
+`--stable-ms`, `--output-dir`. It depends on neither OpenCV nor any
+other `palim` header, so it's just as cheaply unit-testable as
+`commit_metadata`. `main()` calls it on `argv` before touching the
+camera, camera/state-machine/snapshot-writer construction all read
+from the resulting `Config`, and an invalid argument (unrecognized
+flag, missing value, or a value that doesn't fully parse as a number)
+prints a usage message and exits instead of letting an uncaught
+exception propagate or silently misparsing the value.
+
+That "fully parse" qualifier matters: `std::stoi`/`std::stod` silently
+accept a numeric prefix and ignore trailing garbage (`"640x480"` ->
+`640`) unless the caller checks how many characters were actually
+consumed. `parseArgs` checks this for every numeric flag.
+
+Verified: `ParseArgs` tests cover the all-defaults case, each flag
+individually, all flags together, an unrecognized flag, a flag missing
+its value, a non-numeric value, and specifically a numeric value with
+trailing garbage (`"640x480"`, `"5percent"`) to guard the `std::stoi`/
+`std::stod` partial-parse trap above. All passed; deliberately removing
+the consumed-length check on the integer parser caused exactly
+`ParseArgs.TrailingGarbageAfterNumberThrows` to fail, confirming that
+test actually exercises the check rather than passing vacuously.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

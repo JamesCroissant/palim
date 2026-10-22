@@ -140,10 +140,11 @@ Covers `ChangeDetector` (including changed-region bounding boxes),
 (including concurrent producer/consumer and ThreadSanitizer-clean
 shutdown behavior), `GitInfo`, `commit_metadata` parsing (including
 `changed_region`, its `null` form, and its absence in older commits),
-and `Camera`'s failure paths (no device present, a non-V4L2 device).
-`Camera::grab()` against real hardware isn't covered here — that needs
-an actual camera. Pass `-DPALIM_BUILD_TESTS=OFF` to `cmake` to skip
-building the test suite (and its GTest dependency) entirely.
+CLI argument parsing (`parseArgs`), and `Camera`'s failure paths (no
+device present, a non-V4L2 device). `Camera::grab()` against real
+hardware isn't covered here — that needs an actual camera. Pass
+`-DPALIM_BUILD_TESTS=OFF` to `cmake` to skip building the test suite
+(and its GTest dependency) entirely.
 
 ## Running
 
@@ -154,6 +155,21 @@ building the test suite (and its GTest dependency) entirely.
 Opens `/dev/video0` directly via V4L2 and shows a live preview. Press
 **Esc** to quit. Commits are written to `commits/` in the current
 working directory as physical changes are detected.
+
+All of that is configurable via flags instead of recompiling:
+
+```sh
+./build/palim --device /dev/video2 --width 640 --height 480 \
+              --threshold 8 --stable-ms 1500 --output-dir /tmp/palim-commits
+```
+
+| Flag | Meaning | Default |
+| --- | --- | --- |
+| `--device` | V4L2 device path | `/dev/video0` |
+| `--width` / `--height` | capture resolution | `1280` / `720` |
+| `--threshold` | change-% that counts as "changing" | `5` |
+| `--stable-ms` | how long the desk must hold still before committing | `2000` |
+| `--output-dir` | where `commits/NNN/` snapshots are written | `commits` |
 
 Developed against a Logitech/Logicool C270 on Linux; any UVC webcam that
 supports YUYV capture should work. Linux-only — there's no cross-platform
@@ -188,6 +204,7 @@ Sections referenced below are from the original project spec; see
 - [x] "What changed?" diffing for Git state (commit + dirty files) between commits (Phase 6.1)
 - [x] GTest suite covering all of the above (Phase 7)
 - [x] Changed-region localization: bounding box of *where* the frame changed, drawn on a saved `after_annotated.jpg` (Phase 8)
+- [x] CLI flags for camera device, resolution, change threshold, stable duration, and output directory, instead of recompiling (Phase 9)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 

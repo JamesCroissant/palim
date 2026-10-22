@@ -3,13 +3,17 @@
 #include <iostream>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <opencv2/highgui.hpp>
 
 #include "blocking_queue.hpp"
 #include "camera.hpp"
 #include "change_detector.hpp"
+#include "config.hpp"
 #include "frame_history.hpp"
 #include "snapshot_writer.hpp"
 #include "state_machine.hpp"
@@ -20,8 +24,6 @@
 // than being constructed in main and shared) so nothing touches them
 // from more than one thread -- no locking needed for any of them.
 namespace {
-constexpr double kChangeThresholdPercent = 5.0;
-constexpr auto kStableDuration = std::chrono::seconds(2);
 // ~30fps * 3s of headroom, per the design doc's own sizing example.
 constexpr std::size_t kFrameHistoryCapacity = 90;
 // Small on purpose: only the most recent frames are worth processing: if
@@ -33,10 +35,20 @@ constexpr std::size_t kFrameQueueCapacity = 4;
 constexpr std::size_t kCommitQueueCapacity = 64;
 }  // namespace
 
-int main() {
-    palim::Camera camera("/dev/video0");
+int main(int argc, char** argv) {
+    palim::Config config;
+    try {
+        config = palim::parseArgs(std::vector<std::string>(argv + 1, argv + argc));
+    } catch (const std::invalid_argument& e) {
+        std::cerr << "Argument error: " << e.what() << "\n";
+        std::cerr << "Usage: palim [--device PATH] [--width PX] [--height PX] "
+                     "[--threshold PERCENT] [--stable-ms MS] [--output-dir DIR]\n";
+        return 1;
+    }
+
+    palim::Camera camera(config.devicePath, config.width, config.height);
     if (!camera.isOpened()) {
-        std::cerr << "Failed to open camera at /dev/video0\n";
+        std::cerr << "Failed to open camera at " << config.devicePath << "\n";
         return 1;
     }
 
@@ -83,7 +95,7 @@ int main() {
     // changed" lives here, and only here.
     std::thread processingThread([&] {
         palim::ChangeDetector detector;
-        palim::StateMachine stateMachine(kChangeThresholdPercent, kStableDuration);
+        palim::StateMachine stateMachine(config.changeThresholdPercent, config.stableDuration);
         palim::FrameHistory frameHistory(kFrameHistoryCapacity);
         std::optional<cv::Mat> prevFrame;
 
@@ -98,7 +110,7 @@ int main() {
             if (prevFrame) {
                 const auto changeResult = detector.compareWithRegion(*prevFrame, sample->frame);
                 std::cout << "changed: " << changeResult.changedPercent << "%\n";
-                if (changeResult.changedPercent > kChangeThresholdPercent) {
+                if (changeResult.changedPercent > config.changeThresholdPercent) {
                     std::cout << "CHANGE DETECTED\n";
                 }
 
@@ -123,7 +135,7 @@ int main() {
 
     // --- Storage thread: the only thread that touches disk.
     std::thread storageThread([&] {
-        palim::SnapshotWriter snapshotWriter;
+        palim::SnapshotWriter snapshotWriter(config.outputDir);
         while (true) {
             auto commit = commitQueue.waitAndPop();
             if (!commit) {
