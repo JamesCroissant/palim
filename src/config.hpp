@@ -22,8 +22,10 @@ struct Config {
 
 // Parses palim's CLI flags into a Config, starting from the defaults
 // above. Throws std::invalid_argument (with a human-readable message)
-// on an unrecognized flag, a missing value, or a value that fails to
-// parse as the expected type.
+// on an unrecognized flag, a missing value, a value that fails to parse
+// as the expected type, or one that parses but is out of range
+// (--width/--height <= 0, --stable-ms < 0, --threshold non-finite or
+// negative -- see config.cpp's parseIntAtLeast/parseNonNegativeFiniteDouble).
 //
 // Supported flags: --device <path>, --width <px>, --height <px>,
 // --threshold <percent>, --stable-ms <ms>, --output-dir <path>.

@@ -171,6 +171,14 @@ All of that is configurable via flags instead of recompiling:
 | `--stable-ms` | how long the desk must hold still before committing | `2000` |
 | `--output-dir` | where `commits/NNN/` snapshots are written | `commits` |
 
+`--width`/`--height` must be positive, `--stable-ms` must be >= 0, and
+`--threshold` must be a finite number >= 0 -- each is rejected at parse
+time rather than silently accepted (a negative width/height would
+otherwise become a huge unsigned value in the V4L2 format request, a
+negative stable duration would commit on essentially the next tick
+instead of waiting for real stability, and `nan`/`inf`/negative parse
+cleanly as doubles but mean nothing as a threshold).
+
 Developed against a Logitech/Logicool C270 on Linux; any UVC webcam that
 supports YUYV capture should work. Linux-only — there's no cross-platform
 abstraction here on purpose (see the project's own learning goals in
