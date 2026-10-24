@@ -85,6 +85,8 @@ Config parseArgs(const std::vector<std::string>& args) {
                 std::chrono::milliseconds(parseIntAtLeast(arg, nextValue(arg, args, i), 0));
         } else if (arg == "--output-dir") {
             config.outputDir = nextValue(arg, args, i);
+        } else if (arg == "--frame-history-capacity") {
+            config.frameHistoryCapacity = parseIntAtLeast(arg, nextValue(arg, args, i), 1);
         } else {
             throw std::invalid_argument("unrecognized argument: " + arg);
         }

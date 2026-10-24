@@ -12,6 +12,20 @@ TEST(ParseArgs, DefaultsWhenNoArgsGiven) {
     EXPECT_DOUBLE_EQ(config.changeThresholdPercent, 5.0);
     EXPECT_EQ(config.stableDuration, std::chrono::milliseconds(2000));
     EXPECT_EQ(config.outputDir, "commits");
+    EXPECT_EQ(config.frameHistoryCapacity, 90);
+}
+
+TEST(ParseArgs, OverridesFrameHistoryCapacity) {
+    const auto config = palim::parseArgs({"--frame-history-capacity", "30"});
+    EXPECT_EQ(config.frameHistoryCapacity, 30);
+}
+
+// Zero (or negative) would reach RingBuffer's wraparound indexing, which
+// divides by its capacity -- a modulo-by-zero on the very first frame
+// pushed, not just an odd-but-safe setting.
+TEST(ParseArgs, NonPositiveFrameHistoryCapacityThrows) {
+    EXPECT_THROW(palim::parseArgs({"--frame-history-capacity", "0"}), std::invalid_argument);
+    EXPECT_THROW(palim::parseArgs({"--frame-history-capacity", "-30"}), std::invalid_argument);
 }
 
 TEST(ParseArgs, OverridesDevicePath) {
@@ -42,13 +56,15 @@ TEST(ParseArgs, OverridesOutputDir) {
 
 TEST(ParseArgs, AllFlagsTogether) {
     const auto config = palim::parseArgs({"--device", "/dev/video3", "--width", "320", "--height", "240",
-                                           "--threshold", "8", "--stable-ms", "1500", "--output-dir", "out"});
+                                           "--threshold", "8", "--stable-ms", "1500", "--output-dir", "out",
+                                           "--frame-history-capacity", "45"});
     EXPECT_EQ(config.devicePath, "/dev/video3");
     EXPECT_EQ(config.width, 320);
     EXPECT_EQ(config.height, 240);
     EXPECT_DOUBLE_EQ(config.changeThresholdPercent, 8.0);
     EXPECT_EQ(config.stableDuration, std::chrono::milliseconds(1500));
     EXPECT_EQ(config.outputDir, "out");
+    EXPECT_EQ(config.frameHistoryCapacity, 45);
 }
 
 TEST(ParseArgs, UnrecognizedFlagThrows) {

@@ -498,37 +498,65 @@ see below.
 
 Every tunable `main()` actually had — camera device path, capture
 resolution, the change-threshold percentage, the stable-duration
-window, and the commits output directory — was a hardcoded constant or
+window, the commits output directory, and (as of this phase's third
+round, below) `FrameHistory`'s capacity — was a hardcoded constant or
 literal, even though every class involved (`Camera`, `StateMachine`,
-`SnapshotWriter`) already took these as constructor parameters.
-Changing any of them meant editing `main.cpp` and recompiling.
+`SnapshotWriter`, `FrameHistory`) already took these as constructor
+parameters. Changing any of them meant editing `main.cpp` and
+recompiling.
 
-A new `Config` struct (`src/config.hpp`/`.cpp`) holds all five fields
+A new `Config` struct (`src/config.hpp`/`.cpp`) holds all six fields
 with their previous hardcoded values as defaults, and a free function
 `parseArgs(const std::vector<std::string>&)` builds one from CLI
 arguments: `--device`, `--width`, `--height`, `--threshold`,
-`--stable-ms`, `--output-dir`. It depends on neither OpenCV nor any
-other `palim` header, so it's just as cheaply unit-testable as
-`commit_metadata`. `main()` calls it on `argv` before touching the
-camera, camera/state-machine/snapshot-writer construction all read
-from the resulting `Config`, and an invalid argument (unrecognized
-flag, missing value, or a value that doesn't fully parse as a number)
-prints a usage message and exits instead of letting an uncaught
-exception propagate or silently misparsing the value.
+`--stable-ms`, `--output-dir`, `--frame-history-capacity`. It depends
+on neither OpenCV nor any other `palim` header, so it's just as
+cheaply unit-testable as `commit_metadata`. `main()` calls it on
+`argv` before touching the camera, camera/state-machine/snapshot-
+writer/frame-history construction all read from the resulting
+`Config`, and an invalid argument (unrecognized flag, missing value,
+a value that doesn't fully parse as a number, or one that parses but
+is out of range) prints a usage message and exits instead of letting
+an uncaught exception propagate, silently misparsing the value, or
+silently accepting a value that would misbehave later.
 
 That "fully parse" qualifier matters: `std::stoi`/`std::stod` silently
 accept a numeric prefix and ignore trailing garbage (`"640x480"` ->
 `640`) unless the caller checks how many characters were actually
 consumed. `parseArgs` checks this for every numeric flag.
 
+"Out of range" isn't just pickiness, either — a second round on this
+phase added `parseIntAtLeast()` (used for `--width`/`--height` with a
+minimum of 1, `--stable-ms` with a minimum of 0, and
+`--frame-history-capacity` with a minimum of 1) and
+`parseNonNegativeFiniteDouble()` (used for `--threshold`), because
+each flag's naive parse let through a value that was syntactically
+fine but semantically dangerous: a non-positive `--width`/`--height`
+would get cast to a huge unsigned value in `Camera::setFormat`'s
+V4L2 request; a non-positive `--frame-history-capacity` would reach
+`RingBuffer`'s wraparound indexing, which divides by its own capacity
+— a modulo-by-zero on the very first frame pushed, not a theoretical
+concern; a negative `--stable-ms` would make `StateMachine`'s
+`now - stableSince_ >= stableDuration_` check true almost immediately,
+committing on essentially the next tick instead of waiting for real
+stability; and `std::stod` happily parses `"nan"`/`"inf"`/`"-inf"` (and
+a plain negative number) as `--threshold`, none of which mean anything
+as a change-percentage.
+
 Verified: `ParseArgs` tests cover the all-defaults case, each flag
 individually, all flags together, an unrecognized flag, a flag missing
-its value, a non-numeric value, and specifically a numeric value with
-trailing garbage (`"640x480"`, `"5percent"`) to guard the `std::stoi`/
-`std::stod` partial-parse trap above. All passed; deliberately removing
-the consumed-length check on the integer parser caused exactly
-`ParseArgs.TrailingGarbageAfterNumberThrows` to fail, confirming that
-test actually exercises the check rather than passing vacuously.
+its value, a non-numeric value, a numeric value with trailing garbage
+(`"640x480"`, `"5percent"`) to guard the `std::stoi`/`std::stod`
+partial-parse trap above, and each flag's own invalid-range values
+(non-positive width/height/frame-history-capacity, negative
+stable-ms, non-finite or negative threshold) alongside the boundary
+itself staying accepted (`--stable-ms 0`, `--threshold 0`). All
+passed; deliberately removing the consumed-length check on the integer
+parser caused exactly `ParseArgs.TrailingGarbageAfterNumberThrows` to
+fail, and separately removing `parseIntAtLeast`'s bound caused exactly
+its own dependent tests (width/height, stable-ms, frame-history-
+capacity) to fail — confirming each test actually exercises its own
+check rather than passing vacuously.
 
 ## Explicitly deferred (not forgotten — see spec for full detail)
 

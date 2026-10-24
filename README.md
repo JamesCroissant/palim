@@ -170,14 +170,17 @@ All of that is configurable via flags instead of recompiling:
 | `--threshold` | change-% that counts as "changing" | `5` |
 | `--stable-ms` | how long the desk must hold still before committing | `2000` |
 | `--output-dir` | where `commits/NNN/` snapshots are written | `commits` |
+| `--frame-history-capacity` | recent frames `FrameHistory` keeps, to pick the sharpest "after" frame from | `90` (~3s at 30fps) |
 
-`--width`/`--height` must be positive, `--stable-ms` must be >= 0, and
-`--threshold` must be a finite number >= 0 -- each is rejected at parse
-time rather than silently accepted (a negative width/height would
-otherwise become a huge unsigned value in the V4L2 format request, a
-negative stable duration would commit on essentially the next tick
-instead of waiting for real stability, and `nan`/`inf`/negative parse
-cleanly as doubles but mean nothing as a threshold).
+`--width`/`--height`/`--frame-history-capacity` must be positive,
+`--stable-ms` must be >= 0, and `--threshold` must be a finite number
+>= 0 -- each is rejected at parse time rather than silently accepted (a
+negative width/height would otherwise become a huge unsigned value in
+the V4L2 format request, a non-positive frame-history capacity would
+divide by zero on the very first frame pushed into it, a negative
+stable duration would commit on essentially the next tick instead of
+waiting for real stability, and `nan`/`inf`/negative parse cleanly as
+doubles but mean nothing as a threshold).
 
 Developed against a Logitech/Logicool C270 on Linux; any UVC webcam that
 supports YUYV capture should work. Linux-only — there's no cross-platform
@@ -212,7 +215,7 @@ Sections referenced below are from the original project spec; see
 - [x] "What changed?" diffing for Git state (commit + dirty files) between commits (Phase 6.1)
 - [x] GTest suite covering all of the above (Phase 7)
 - [x] Changed-region localization: bounding box of *where* the frame changed, drawn on a saved `after_annotated.jpg` (Phase 8)
-- [x] CLI flags for camera device, resolution, change threshold, stable duration, and output directory, instead of recompiling (Phase 9)
+- [x] CLI flags for camera device, resolution, change threshold, stable duration, output directory, and frame-history capacity, instead of recompiling, each validated at parse time (Phase 9)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 

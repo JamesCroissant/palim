@@ -24,8 +24,6 @@
 // than being constructed in main and shared) so nothing touches them
 // from more than one thread -- no locking needed for any of them.
 namespace {
-// ~30fps * 3s of headroom, per the design doc's own sizing example.
-constexpr std::size_t kFrameHistoryCapacity = 90;
 // Small on purpose: only the most recent frames are worth processing: if
 // processing falls behind, dropping a stale frame is fine.
 constexpr std::size_t kFrameQueueCapacity = 4;
@@ -42,7 +40,8 @@ int main(int argc, char** argv) {
     } catch (const std::invalid_argument& e) {
         std::cerr << "Argument error: " << e.what() << "\n";
         std::cerr << "Usage: palim [--device PATH] [--width PX] [--height PX] "
-                     "[--threshold PERCENT] [--stable-ms MS] [--output-dir DIR]\n";
+                     "[--threshold PERCENT] [--stable-ms MS] [--output-dir DIR] "
+                     "[--frame-history-capacity FRAMES]\n";
         return 1;
     }
 
@@ -96,7 +95,7 @@ int main(int argc, char** argv) {
     std::thread processingThread([&] {
         palim::ChangeDetector detector;
         palim::StateMachine stateMachine(config.changeThresholdPercent, config.stableDuration);
-        palim::FrameHistory frameHistory(kFrameHistoryCapacity);
+        palim::FrameHistory frameHistory(static_cast<std::size_t>(config.frameHistoryCapacity));
         std::optional<cv::Mat> prevFrame;
 
         while (true) {
