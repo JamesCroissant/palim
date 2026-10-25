@@ -153,8 +153,11 @@ hardware isn't covered here — that needs an actual camera. Pass
 ```
 
 Opens `/dev/video0` directly via V4L2 and shows a live preview. Press
-**Esc** to quit. Commits are written to `commits/` in the current
-working directory as physical changes are detected.
+**Esc**, or send `SIGINT`/`SIGTERM` (Ctrl-C, or a plain `kill`), to quit
+-- both join the capture/processing/storage threads cleanly rather than
+risking a commit left half-written mid-shutdown. Commits are written to
+`commits/` in the current working directory as physical changes are
+detected.
 
 All of that is configurable via flags instead of recompiling:
 
@@ -216,6 +219,7 @@ Sections referenced below are from the original project spec; see
 - [x] GTest suite covering all of the above (Phase 7)
 - [x] Changed-region localization: bounding box of *where* the frame changed, drawn on a saved `after_annotated.jpg` (Phase 8)
 - [x] CLI flags for camera device, resolution, change threshold, stable duration, output directory, and frame-history capacity, instead of recompiling, each validated at parse time (Phase 9)
+- [x] Clean shutdown on `SIGINT`/`SIGTERM`, joining all three threads instead of risking a half-written commit (Phase 10)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 

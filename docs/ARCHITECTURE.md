@@ -558,6 +558,48 @@ its own dependent tests (width/height, stable-ms, frame-history-
 capacity) to fail — confirming each test actually exercises its own
 check rather than passing vacuously.
 
+## Phase 10: clean shutdown on SIGINT/SIGTERM
+
+`main()`'s three threads (capture, processing, storage) already shut
+down cleanly on their own `running`-flag protocol — but the only way
+to set that flag was pressing Esc in the preview window. Ctrl-C
+(`SIGINT`) or a plain `kill` (`SIGTERM`) hit the default handler
+instead, which just terminates the process immediately. For most
+programs that's a minor inconvenience; for this one specifically it's
+a correctness problem, because the storage thread can be mid-
+`SnapshotWriter::write()` at any moment — `before.jpg` written,
+`after.jpg` not yet, `metadata.json` not yet either. A signal landing
+there would leave that exact half-written `commits/NNN/` directory
+behind: a corrupted commit in a tool whose entire point is that a
+commit, once written, is a trustworthy record.
+
+`src/shutdown_flag.hpp` adds `ShutdownFlag`, a process-wide singleton
+around one `std::atomic<bool>`, and `installShutdownSignalHandlers()`,
+which registers a handler for `SIGINT`/`SIGTERM` that calls its
+`request()`. The handler itself does nothing but that one atomic
+store — a signal handler can only safely call a small, fixed set of
+library functions, and a relaxed store/load on an already-lock-free
+atomic is one of the few operations actually guaranteed safe inside
+one. `main()`'s old local `running` flag is gone; every loop that used
+to read it (`captureThread`'s grab loop, the main thread's display
+loop) now reads `ShutdownFlag::instance().requested()` instead, and
+the Esc-key path calls `request()` instead of storing into a local —
+otherwise the shutdown sequence (capture stops → `frameQueue.shutdown()`
+→ processing drains and stops → `commitQueue.shutdown()` → storage
+drains and stops → all three threads joined) is exactly what it always
+was.
+
+Verified: `ShutdownFlag` tests cover `request()`/`requested()`
+directly, and — the pair that actually matters — installing the real
+handler and calling `raise(SIGINT)`/`raise(SIGTERM)` (not just calling
+`request()` directly) to confirm the flag ends up set through the
+full signal-delivery path, the same path `main()` itself relies on.
+All passed; temporarily making the handler a no-op caused exactly
+those two signal-delivery tests to fail (the two direct-call tests
+still passed, as expected), confirming they actually exercise signal
+delivery rather than passing vacuously. Restored, full suite (64
+tests) green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

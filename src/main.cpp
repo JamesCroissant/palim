@@ -1,4 +1,3 @@
-#include <atomic>
 #include <chrono>
 #include <iostream>
 #include <mutex>
@@ -15,6 +14,7 @@
 #include "change_detector.hpp"
 #include "config.hpp"
 #include "frame_history.hpp"
+#include "shutdown_flag.hpp"
 #include "snapshot_writer.hpp"
 #include "state_machine.hpp"
 
@@ -45,13 +45,21 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Before anything else starts: Ctrl-C/SIGTERM used to just kill the
+    // process, abandoning whichever thread was mid-flight -- most
+    // importantly the storage thread, possibly mid-SnapshotWriter::write(),
+    // which would leave a half-written commits/NNN/ directory behind.
+    // ShutdownFlag::requested() now drives every loop below the same way
+    // Esc already did, so a signal joins all three threads cleanly
+    // instead of corrupting whatever commit was in progress.
+    palim::installShutdownSignalHandlers();
+
     palim::Camera camera(config.devicePath, config.width, config.height);
     if (!camera.isOpened()) {
         std::cerr << "Failed to open camera at " << config.devicePath << "\n";
         return 1;
     }
 
-    std::atomic<bool> running{true};
     palim::BlockingQueue<palim::FrameSample> frameQueue(kFrameQueueCapacity);
     palim::BlockingQueue<palim::CommitEvent> commitQueue(kCommitQueueCapacity);
 
@@ -71,7 +79,7 @@ int main(int argc, char** argv) {
     // because grab() is non-const and lambda captures are const by
     // default.
     std::thread captureThread([&, camera = std::move(camera)]() mutable {
-        while (running.load()) {
+        while (!palim::ShutdownFlag::instance().requested()) {
             auto frame = camera.grab();
             if (!frame) {
                 continue;
@@ -151,7 +159,7 @@ int main(int argc, char** argv) {
     const std::string windowName = "palim";
     cv::namedWindow(windowName, cv::WINDOW_AUTOSIZE);
 
-    while (running.load()) {
+    while (!palim::ShutdownFlag::instance().requested()) {
         cv::Mat frame;
         {
             std::lock_guard<std::mutex> lock(displayMutex);
@@ -165,7 +173,7 @@ int main(int argc, char** argv) {
         // draws. 30ms caps the display refresh rate instead of spinning
         // as fast as possible.
         if (cv::waitKey(30) == 27) {  // Esc
-            running.store(false);
+            palim::ShutdownFlag::instance().request();
         }
     }
 
