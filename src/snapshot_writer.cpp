@@ -1,5 +1,7 @@
 #include "snapshot_writer.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <ctime>
 #include <fstream>
 #include <iomanip>
@@ -33,10 +35,43 @@ std::string jsonOptionalInt(std::optional<int> value) {
     return value ? std::to_string(*value) : "null";
 }
 
+// Scans outputDir for subdirectories this class has already written
+// (named "NNN", all digits -- anything else, a stray file or a
+// directory a human created, is ignored rather than treated as a parse
+// error) and returns one past the highest ID found, or 1 if none exist.
+// Restarting palim against a directory with existing commits must
+// resume numbering from there, not restart at 1 and silently overwrite
+// them -- the exact failure mode this function exists to prevent.
+int findNextAvailableId(const std::filesystem::path& outputDir) {
+    int maxId = 0;
+    if (!std::filesystem::exists(outputDir)) {
+        return 1;
+    }
+    for (const auto& entry : std::filesystem::directory_iterator(outputDir)) {
+        if (!entry.is_directory()) {
+            continue;
+        }
+        const std::string name = entry.path().filename().string();
+        const bool allDigits =
+            !name.empty() &&
+            std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isdigit(c) != 0; });
+        if (!allDigits) {
+            continue;
+        }
+        try {
+            maxId = std::max(maxId, std::stoi(name));
+        } catch (const std::exception&) {
+            continue;  // e.g. a numeric name too long for int -- skip it
+        }
+    }
+    return maxId + 1;
+}
+
 }  // namespace
 
 SnapshotWriter::SnapshotWriter(std::filesystem::path outputDir) : outputDir_(std::move(outputDir)) {
     std::filesystem::create_directories(outputDir_);
+    nextId_ = findNextAvailableId(outputDir_);
 }
 
 std::string SnapshotWriter::formatTimestamp(std::chrono::system_clock::time_point tp) {

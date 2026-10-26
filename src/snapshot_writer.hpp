@@ -7,7 +7,10 @@
 namespace palim {
 
 // Writes each CommitEvent to commits/NNN/{before.jpg,after.jpg,metadata.json}.
-// Numbering is sequential per run, starting at 1.
+// Numbering is sequential, resuming after whatever commits/NNN
+// directories already exist in outputDir -- restarting palim against a
+// directory with earlier commits continues from the next free ID
+// instead of starting over at 1 and overwriting them.
 class SnapshotWriter {
 public:
     explicit SnapshotWriter(std::filesystem::path outputDir = "commits");

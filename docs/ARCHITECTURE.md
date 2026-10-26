@@ -600,6 +600,51 @@ still passed, as expected), confirming they actually exercise signal
 delivery rather than passing vacuously. Restored, full suite (64
 tests) green again.
 
+## Phase 11: `SnapshotWriter` resumes numbering instead of overwriting old commits
+
+`SnapshotWriter` numbered commits sequentially starting from 1 every
+time it was constructed — fine for a single run, but it had no memory
+of what a *previous* run already wrote. Restarting `palim` against the
+same `commits/` directory (after a crash, a planned restart, anything)
+started counting from 1 again and silently overwrote `commits/001/`,
+`002/`, and so on with brand-new before/after/metadata — destroying
+whatever physical-change history was already recorded there. For a
+tool whose entire premise is that a written commit is a trustworthy
+record, this was the most damaging bug found so far: not a narrow
+race window like Phases 9-10's fixes, but a plain, 100%-reproducible
+data-loss path on the single most ordinary event this program will
+ever see — being restarted.
+
+Added `findNextAvailableId()` (`src/snapshot_writer.cpp`): scans
+`outputDir` for existing subdirectories whose name is entirely digits
+(what this class itself ever creates, e.g. `"007"` — anything else,
+a stray file or a directory a human added, is ignored rather than
+treated as a parse error) and returns one past the highest ID found,
+or `1` if none exist. The constructor now calls this instead of always
+starting at `1`, so a second `SnapshotWriter` built against a
+directory that already holds commits 1-3 resumes at 4.
+
+This was also `SnapshotWriter`'s first real test coverage at all —
+previously exercised only indirectly through `main.cpp`, which no test
+here touches. `tests/test_snapshot_writer.cpp` builds synthetic
+`CommitEvent`s (plain solid-color frames, no camera needed) and
+covers: a fresh directory starting at `001`; several commits in one
+run incrementing sequentially; the actual bug this phase fixes —
+writing 1-3, marking commit `002` with a sentinel file, constructing a
+*second* `SnapshotWriter` against the same directory, writing again,
+and confirming the new commit lands at `004` while `002`'s sentinel
+file is untouched; and a non-numeric subdirectory being ignored rather
+than breaking the scan.
+
+**Verified**: all four new tests passed. Temporarily hardcoding
+`findNextAvailableId()` to always return `1` (restoring the original
+bug) caused exactly the two tests that depend on resumption
+(`ResumingInAnExistingDirectoryDoesNotOverwritePriorCommits`,
+`IgnoresNonNumericSubdirectories`) to fail, while the two single-run
+tests kept passing (as expected, since they never restart a writer) —
+confirming the new tests actually exercise the fix rather than passing
+vacuously. Restored, full suite (68 tests) green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

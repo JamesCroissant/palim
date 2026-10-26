@@ -220,6 +220,7 @@ Sections referenced below are from the original project spec; see
 - [x] Changed-region localization: bounding box of *where* the frame changed, drawn on a saved `after_annotated.jpg` (Phase 8)
 - [x] CLI flags for camera device, resolution, change threshold, stable duration, output directory, and frame-history capacity, instead of recompiling, each validated at parse time (Phase 9)
 - [x] Clean shutdown on `SIGINT`/`SIGTERM`, joining all three threads instead of risking a half-written commit (Phase 10)
+- [x] Restarting `palim` against an existing `commits/` directory resumes numbering instead of overwriting earlier commits (Phase 11)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 
