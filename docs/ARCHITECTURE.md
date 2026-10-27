@@ -645,6 +645,52 @@ tests kept passing (as expected, since they never restart a writer) —
 confirming the new tests actually exercise the fix rather than passing
 vacuously. Restored, full suite (68 tests) green again.
 
+## Phase 12: the capture thread gives up instead of busy-spinning on a dead camera
+
+The capture thread's loop was `auto frame = camera.grab(); if (!frame)
+{ continue; }`. On the success path that's fine — `grab()` blocks on
+`VIDIOC_DQBUF` until the driver has a real frame ready, so the loop
+naturally paces itself at the camera's own frame rate. On the failure
+path there's no such blocking: a V4L2 ioctl that's going to fail
+typically fails immediately, so a disconnected camera or a stuck
+driver turned this `continue` into an unthrottled busy loop, spinning
+one CPU core at 100% forever with no error message and no way for the
+rest of the program (or the user) to notice anything was wrong short
+of the preview window visibly going stale.
+
+Added `src/consecutive_failure_guard.hpp`: `ConsecutiveFailureGuard`
+tracks consecutive failures of some operation and reports (via
+`recordFailure()`'s return value) once enough of them have happened in
+a row, with no `recordSuccess()` in between, to treat the condition as
+permanent rather than a transient blip. Pure counting logic, no OpenCV
+or camera dependency, so it's unit-testable the same way
+`commit_metadata`/`Config` already are.
+
+The capture thread now wraps `camera.grab()` with one
+(`kMaxConsecutiveGrabFailures = 30`): a failed grab sleeps 10ms (bounds
+the spin to a sane rate instead of pegging the CPU, even during the
+~300ms it takes to reach the threshold) and retries; reaching the
+threshold logs why and calls `ShutdownFlag::instance().request()` —
+the same clean-shutdown path Phase 10 already wired up for `SIGINT`/
+`SIGTERM` — instead of spinning forever. A single dropped frame still
+costs nothing but one 10ms sleep, matching the project's own
+established tolerance for occasional frame drops elsewhere (the frame
+queue's own bounded-drop behavior, Phase 3).
+
+Verified: `ConsecutiveFailureGuard` tests cover not giving up before
+the threshold, giving up exactly at it, a success resetting the count,
+a threshold of 1 giving up on the very first failure, and staying
+given up on further failures past that point. All passed; temporarily
+making `recordFailure()` always return `false` (never giving up)
+caused exactly the four tests that depend on the threshold actually
+firing to fail, while the one test that never expects `true`
+(`DoesNotGiveUpBeforeThreshold`) kept passing — confirming the others
+actually exercise the threshold logic rather than passing vacuously.
+Restored, full suite (73 tests) green again. The capture-thread wiring
+itself can't be exercised live in this headless container (no real
+camera to disconnect) — verified by code review, the same limitation
+`Camera::grab()`'s own tests already have.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

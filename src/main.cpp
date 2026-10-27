@@ -13,6 +13,7 @@
 #include "camera.hpp"
 #include "change_detector.hpp"
 #include "config.hpp"
+#include "consecutive_failure_guard.hpp"
 #include "frame_history.hpp"
 #include "shutdown_flag.hpp"
 #include "snapshot_writer.hpp"
@@ -31,6 +32,15 @@ constexpr std::size_t kFrameQueueCapacity = 4;
 // stability) and each one matters, so this should never realistically
 // fill up and drop anything.
 constexpr std::size_t kCommitQueueCapacity = 64;
+// Camera::grab() fails fast (no blocking ioctl succeeds) rather than
+// taking the normal blocking-until-a-real-frame path, so a disconnected
+// camera or a stuck driver would otherwise spin the capture thread at
+// 100% CPU forever with nothing to notice or stop it. ~300ms of
+// consecutive failures (at the 10ms retry delay below) is long enough
+// to absorb a brief multi-frame hiccup without mistaking it for a dead
+// camera.
+constexpr int kMaxConsecutiveGrabFailures = 30;
+constexpr auto kGrabFailureRetryDelay = std::chrono::milliseconds(10);
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -79,11 +89,20 @@ int main(int argc, char** argv) {
     // because grab() is non-const and lambda captures are const by
     // default.
     std::thread captureThread([&, camera = std::move(camera)]() mutable {
+        palim::ConsecutiveFailureGuard grabFailureGuard(kMaxConsecutiveGrabFailures);
         while (!palim::ShutdownFlag::instance().requested()) {
             auto frame = camera.grab();
             if (!frame) {
+                if (grabFailureGuard.recordFailure()) {
+                    std::cerr << "Camera: " << kMaxConsecutiveGrabFailures
+                              << " consecutive failed grabs -- giving up\n";
+                    palim::ShutdownFlag::instance().request();
+                    break;
+                }
+                std::this_thread::sleep_for(kGrabFailureRetryDelay);
                 continue;
             }
+            grabFailureGuard.recordSuccess();
             const auto timestamp = std::chrono::steady_clock::now();
             const auto settings = camera.currentSettings();
 
