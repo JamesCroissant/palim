@@ -691,6 +691,50 @@ itself can't be exercised live in this headless container (no real
 camera to disconnect) — verified by code review, the same limitation
 `Camera::grab()`'s own tests already have.
 
+## Phase 13: `commit_metadata.cpp`'s JSON reader now counts escapes correctly
+
+`extractRawValue`'s and `extractStringArray`'s string-value parsing
+found a closing quote by searching for the next `"` and bailing out if
+the single character right before it was a backslash — on the theory
+that a backslash immediately before a quote means that quote is
+escaped (`\"`, part of the string's content, not the delimiter). That
+theory breaks for a value ending in a literal backslash: `commit`,
+`available`, and each entry of `dirty_files` are strings
+`SnapshotWriter::jsonEscape()` wrote, and it escapes a literal `\` the
+same way standard JSON does, by doubling it to `\\`. A dirty file path
+ending in one literal backslash is written as `...\\"` — two
+backslashes, then the real closing quote — and the old single-character
+check saw that second backslash and wrongly concluded the quote right
+after it was escaped too, sending the search past the string's actual
+end and into whatever came next in the document (the next array entry,
+or the next key entirely). Separately, neither function ever reversed
+`jsonEscape()`'s escaping on the way out, so even a value whose closing
+quote *was* found correctly would come back with stray backslashes
+still embedded in front of every `"` or `\` it ever contained.
+
+Added two helpers: `findClosingQuote()` counts the full run of
+consecutive backslashes immediately before each candidate closing
+quote rather than just the one before it — an odd count means the
+quote is escaped (keep searching), an even count (including zero)
+means it's the real delimiter — and `jsonUnescape()` reverses exactly
+the two escapes `jsonEscape()` ever writes (`\"` and `\\`) so a
+round-tripped value comes back exactly as it went in. Both
+`extractRawValue`'s string branch and `extractStringArray`'s inner
+loop now go through these instead of the old naive check.
+
+Verified: added `DirtyFileEndingInLiteralBackslashDoesNotCorruptParsing`
+(a `dirty_files` array with an entry ending in a literal backslash,
+followed by a second ordinary entry) and
+`DirtyFileWithEmbeddedQuoteIsUnescaped` (an entry containing a literal
+`"`) to `tests/test_commit_metadata.cpp`. Temporarily reverting
+`findClosingQuote()` to the old single-character check reproduced the
+bug exactly as described — the backslash test failed with
+`dirtyFiles` showing the parse having run straight through the array's
+real end into the raw bytes of the next field — while the quote test
+still passed (that one exercises `jsonUnescape()`, which the revert
+didn't touch) and the rest of the suite was unaffected. Restored, full
+suite (75 tests) green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

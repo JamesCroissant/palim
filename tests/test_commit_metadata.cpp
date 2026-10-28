@@ -168,6 +168,66 @@ TEST_F(CommitMetadataTest, NullCameraControlsBecomeNullopt) {
     EXPECT_TRUE(m->dirtyFiles.empty());
 }
 
+// SnapshotWriter's jsonEscape() writes a literal trailing backslash as
+// two backslashes ("\\" in the JSON source). The old escape-skip logic
+// only looked at the single character right before a candidate closing
+// quote, so it saw that second backslash and wrongly concluded the real
+// closing quote right after it was itself escaped -- sending the search
+// past the string's true end and corrupting whatever came after it in
+// the array. Counting the full run of backslashes (even = not escaped)
+// gets this right, and a second array entry confirms parsing resumed
+// correctly instead of losing its place.
+TEST_F(CommitMetadataTest, DirtyFileEndingInLiteralBackslashDoesNotCorruptParsing) {
+    writeMetadata(R"({
+  "timestamp": "2026-09-16T00:52:13",
+  "change_score": 0,
+  "sharpness_score": 0,
+  "camera": {
+    "width": 640, "height": 480, "exposure_auto": null, "exposure_absolute": null,
+    "gain": null, "white_balance_auto": null, "white_balance_temperature": null
+  },
+  "git": {
+    "available": true,
+    "commit": "a91e32f1234567890",
+    "dirty_files": [
+      "weird\\",
+      "src/capture.cpp"
+    ]
+  }
+})");
+
+    auto m = palim::readCommitMetadata(dir);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_EQ(m->dirtyFiles, (std::vector<std::string>{"weird\\", "src/capture.cpp"}));
+    EXPECT_EQ(m->gitCommit, "a91e32f1234567890");
+}
+
+// A dirty file path containing a literal double quote is written by
+// jsonEscape() as \" in the JSON. The parsed value must come back with
+// the quote restored rather than left as a literal backslash-quote pair.
+TEST_F(CommitMetadataTest, DirtyFileWithEmbeddedQuoteIsUnescaped) {
+    writeMetadata(R"({
+  "timestamp": "2026-09-16T00:52:13",
+  "change_score": 0,
+  "sharpness_score": 0,
+  "camera": {
+    "width": 640, "height": 480, "exposure_auto": null, "exposure_absolute": null,
+    "gain": null, "white_balance_auto": null, "white_balance_temperature": null
+  },
+  "git": {
+    "available": true,
+    "commit": "deadbeef",
+    "dirty_files": [
+      "say \"hi\".txt"
+    ]
+  }
+})");
+
+    auto m = palim::readCommitMetadata(dir);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_EQ(m->dirtyFiles, (std::vector<std::string>{"say \"hi\".txt"}));
+}
+
 TEST_F(CommitMetadataTest, MissingFileReturnsNullopt) {
     // dir exists but metadata.json was never written.
     EXPECT_FALSE(palim::readCommitMetadata(dir).has_value());

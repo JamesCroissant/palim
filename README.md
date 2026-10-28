@@ -139,7 +139,8 @@ Covers `ChangeDetector` (including changed-region bounding boxes),
 `StateMachine`, `RingBuffer`, `FrameHistory`, `BlockingQueue`
 (including concurrent producer/consumer and ThreadSanitizer-clean
 shutdown behavior), `GitInfo`, `commit_metadata` parsing (including
-`changed_region`, its `null` form, and its absence in older commits),
+`changed_region`, its `null` form, its absence in older commits, and
+dirty file paths containing a literal backslash or double quote),
 CLI argument parsing (`parseArgs`), and `Camera`'s failure paths (no
 device present, a non-V4L2 device). `Camera::grab()` against real
 hardware isn't covered here — that needs an actual camera. Pass

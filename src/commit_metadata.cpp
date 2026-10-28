@@ -9,11 +9,57 @@ namespace palim {
 
 namespace {
 
-// Finds "key": <value> and returns <value> verbatim (quotes stripped for
-// string values, otherwise the raw token up to the next , \n or }).
-// Works here only because every key SnapshotWriter emits is unique
-// across the whole document -- there's no need to track which object
-// (top-level, "camera", "git") a key belongs to.
+// Finds the closing quote for a JSON string whose opening quote is at
+// s[openQuotePos], honoring backslash escapes correctly: a quote
+// preceded by an *odd* number of consecutive backslashes is itself
+// escaped (part of the string's content), not the closing delimiter.
+// Checking only the single preceding character -- which is what this
+// used to do -- gets that wrong for a value containing a literal
+// backslash immediately before a real delimiter: a dirty file path
+// ending in one literal "\" is written as "\\" by SnapshotWriter's
+// jsonEscape(), and a naive single-character check sees that trailing
+// backslash and wrongly concludes the quote right after it is escaped,
+// sending the search past the string's real end.
+std::optional<std::size_t> findClosingQuote(const std::string& s, std::size_t openQuotePos) {
+    std::size_t pos = openQuotePos + 1;
+    while (true) {
+        pos = s.find('"', pos);
+        if (pos == std::string::npos) {
+            return std::nullopt;
+        }
+        std::size_t backslashCount = 0;
+        for (std::size_t i = pos; i > 0 && s[i - 1] == '\\'; --i) {
+            ++backslashCount;
+        }
+        if (backslashCount % 2 == 0) {
+            return pos;
+        }
+        ++pos;  // this quote is escaped; keep searching after it
+    }
+}
+
+// Reverses SnapshotWriter's jsonEscape(): turns \" and \\ back into "
+// and \, the only two escapes it ever writes, so a round-tripped string
+// value comes back exactly as it went in.
+std::string jsonUnescape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '\\' && i + 1 < s.size() && (s[i + 1] == '"' || s[i + 1] == '\\')) {
+            out += s[i + 1];
+            ++i;
+        } else {
+            out += s[i];
+        }
+    }
+    return out;
+}
+
+// Finds "key": <value> and returns <value> (quotes stripped and
+// escapes reversed for string values, otherwise the raw token up to
+// the next , \n or }). Works here only because every key SnapshotWriter
+// emits is unique across the whole document -- there's no need to
+// track which object (top-level, "camera", "git") a key belongs to.
 std::optional<std::string> extractRawValue(const std::string& json, const std::string& key) {
     const std::string needle = "\"" + key + "\":";
     auto pos = json.find(needle);
@@ -29,14 +75,11 @@ std::optional<std::string> extractRawValue(const std::string& json, const std::s
     }
 
     if (json[pos] == '"') {
-        auto end = json.find('"', pos + 1);
-        while (end != std::string::npos && end > 0 && json[end - 1] == '\\') {
-            end = json.find('"', end + 1);
-        }
-        if (end == std::string::npos) {
+        const auto end = findClosingQuote(json, pos);
+        if (!end) {
             return std::nullopt;
         }
-        return json.substr(pos + 1, end - pos - 1);
+        return jsonUnescape(json.substr(pos + 1, *end - pos - 1));
     }
 
     auto end = json.find_first_of(",\n}", pos);
@@ -97,12 +140,12 @@ std::vector<std::string> extractStringArray(const std::string& json, const std::
         if (open == std::string::npos) {
             break;
         }
-        auto close = content.find('"', open + 1);
-        if (close == std::string::npos) {
+        const auto close = findClosingQuote(content, open);
+        if (!close) {
             break;
         }
-        result.push_back(content.substr(open + 1, close - open - 1));
-        i = close + 1;
+        result.push_back(jsonUnescape(content.substr(open + 1, *close - open - 1)));
+        i = *close + 1;
     }
     return result;
 }
