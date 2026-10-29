@@ -58,28 +58,61 @@ TEST_F(StateMachineTest, CommitsOnceStableDurationElapsesAfterChange) {
     // Elapsed since the second stableSince_: 90 + 111 = 201ms -- now it commits.
     auto result = tick(0.0, 111ms);
     ASSERT_TRUE(result.has_value());
-    EXPECT_DOUBLE_EQ(result->changeScore, 0.0);
+    // The commit's changeScore is the 20.0 that originally triggered
+    // Stable -> Changing, not 0.0 (the percent on this, the stability-
+    // confirming tick itself, which is by definition always at or below
+    // the threshold -- reporting that instead would make changeScore
+    // meaningless on every single commit).
+    EXPECT_DOUBLE_EQ(result->changeScore, 20.0);
 }
 
 TEST_F(StateMachineTest, CommitEventHasNoRegionWhenItsTriggeringTickHadNone) {
     tick(0.0, 10ms);
-    tick(20.0, 10ms);                      // Stable -> Changing
+    tick(20.0, 10ms);                      // Stable -> Changing; the triggering tick, no region
     tick(0.0, 10ms);                       // Changing -> WaitForStable (stableSince_ set here)
-    auto result = tick(0.0, 210ms);        // no region passed
+    auto result = tick(0.0, 210ms);
     ASSERT_TRUE(result.has_value());
     EXPECT_FALSE(result->changedRegion.has_value());
 }
 
-TEST_F(StateMachineTest, CommitEventReflectsARegionOnTheExactTriggeringTick) {
+// The region captured is the *triggering* tick's (Stable -> Changing), not
+// whichever tick happens to finally confirm stability -- that tick's own
+// region (if it even reported one; stable-by-definition ticks usually
+// don't cross the threshold at all) describes incidental noise, not the
+// change this commit is actually about.
+TEST_F(StateMachineTest, CommitEventReflectsTheRegionFromTheTriggeringTick) {
     const cv::Rect region(10, 20, 30, 40);
     tick(0.0, 10ms);
-    tick(20.0, 10ms);                      // Stable -> Changing
+    tick(20.0, 10ms, region);              // Stable -> Changing; the triggering tick
     tick(0.0, 10ms);                       // Changing -> WaitForStable (stableSince_ set here)
-    // The commit-producing tick itself carries a region this time.
-    auto result = tick(0.0, 210ms, region);
+    // The final, stability-confirming tick carries no region of its own --
+    // if the bug ever came back (reading the region off *this* tick
+    // instead of the triggering one), this would start failing.
+    auto result = tick(0.0, 210ms);
     ASSERT_TRUE(result.has_value());
     ASSERT_TRUE(result->changedRegion.has_value());
     EXPECT_EQ(*result->changedRegion, region);
+}
+
+// Motion resuming mid-WaitForStable sends state_ back to Changing (see
+// MotionResumingMidWaitResetsTheClock) without re-triggering from Stable --
+// the eventual commit must still carry the *original* trigger's
+// changeScore/changedRegion, not the resumption's, the same way
+// beforeFrame_ already isn't overwritten by a resumption either.
+TEST_F(StateMachineTest, ResumedMotionDoesNotOverwriteTheOriginalTrigger) {
+    const cv::Rect firstRegion(1, 2, 3, 4);
+    const cv::Rect resumeRegion(50, 60, 70, 80);
+    tick(0.0, 10ms);
+    tick(20.0, 10ms, firstRegion);         // Stable -> Changing; the real trigger
+    tick(0.0, 50ms);                       // Changing -> WaitForStable
+    tick(10.0, 10ms, resumeRegion);        // motion resumes -> back to Changing
+    tick(0.0, 100ms);                      // Changing -> WaitForStable again
+    tick(0.0, 90ms);                       // not enough time yet
+    auto result = tick(0.0, 111ms);        // 201ms since the second stableSince_ -> commits
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(result->changeScore, 20.0);
+    ASSERT_TRUE(result->changedRegion.has_value());
+    EXPECT_EQ(*result->changedRegion, firstRegion);
 }
 
 TEST_F(StateMachineTest, ReturnsToStableAfterCommitAndDoesNotDoubleCommit) {

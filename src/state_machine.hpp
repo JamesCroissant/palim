@@ -60,6 +60,14 @@ private:
     State state_ = State::Stable;
     cv::Mat lastFrame_;
     cv::Mat beforeFrame_;
+    // Captured once, at the same Stable -> Changing transition that sets
+    // beforeFrame_ above -- not updated again if motion resumes mid-
+    // WaitForStable and sends state_ back to Changing (see update()'s own
+    // comment), for the same reason beforeFrame_ isn't: both describe the
+    // change that originally triggered this commit cycle, not whichever
+    // tick happens to finally confirm stability.
+    double triggerChangeScore_ = 0.0;
+    std::optional<cv::Rect> triggerChangedRegion_;
     std::chrono::steady_clock::time_point stableSince_;
 };
 

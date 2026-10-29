@@ -16,8 +16,15 @@ std::optional<CommitEvent> StateMachine::update(double changedPercent, std::opti
             if (changing) {
                 // lastFrame_ is the most recent frame we saw while still
                 // stable — i.e. the state of the desk just before this
-                // change started.
+                // change started. changedPercent/changedRegion at this
+                // exact instant describe the change that triggered this
+                // commit cycle -- captured now, not read off whichever
+                // tick eventually confirms stability (see the eventual
+                // CommitEvent below, and these two fields' own comments
+                // in state_machine.hpp).
                 beforeFrame_ = lastFrame_;
+                triggerChangeScore_ = changedPercent;
+                triggerChangedRegion_ = changedRegion;
                 state_ = State::Changing;
             }
             break;
@@ -35,7 +42,9 @@ std::optional<CommitEvent> StateMachine::update(double changedPercent, std::opti
                 // it as still one continuous change.
                 state_ = State::Changing;
             } else if (now - stableSince_ >= stableDuration_) {
-                event = CommitEvent{beforeFrame_, frame, changedPercent, changedRegion, stableSince_, now, settings};
+                event = CommitEvent{beforeFrame_,          frame,       triggerChangeScore_,
+                                     triggerChangedRegion_, stableSince_, now,
+                                     settings};
                 state_ = State::Stable;
             }
             break;

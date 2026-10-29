@@ -735,6 +735,68 @@ still passed (that one exercises `jsonUnescape()`, which the revert
 didn't touch) and the rest of the suite was unaffected. Restored, full
 suite (75 tests) green again.
 
+## Phase 14: `changeScore`/`changedRegion` now actually reflect the change that triggered the commit
+
+`CommitEvent::changeScore`'s own field comment has said "the changed-%
+reading that triggered CHANGING" since the very first commit that
+introduced it (Phase 3) — but `StateMachine::update()` never actually
+read that value off the `Stable -> Changing` transition. It built the
+`CommitEvent` out of whichever `changedPercent`/`changedRegion` were
+passed to the *final*, stability-confirming tick instead — the one
+where `now - stableSince_ >= stableDuration_` finally holds. That tick
+is stable by definition, so its `changedPercent` is always at or below
+`changeThresholdPercent_` — meaning every `change_score` this project
+has ever written to a `metadata.json` understated the actual change
+that happened, usually down near zero, regardless of whether the
+desk's change was tiny or dramatic. README's own example metadata
+(`"change_score": 42.5`) only makes sense under the comment's original
+intent; the actual value in a fresh commit's own `metadata.json` would
+never look like that.
+
+The regression hid for two reasons. First, there was nothing to notice
+it against: `change_score` has no consumer that validates it (`palim-
+timeline` just prints whatever number is there), so a wrong-but-
+plausible-looking small number never looked broken. Second, Phase 8
+(changed-region localization) extended the same pattern to
+`changedRegion` and its own journal entry even describes it as
+deliberate — "the region from the exact tick whose stable-window wait
+completes and triggers the commit, not an earlier or later one" — which
+reads as a design choice, not as "matches changeScore's pre-existing
+bug." But the same reasoning applies: a stable tick's own changed
+pixels, when there are any, are incidental sensor noise around the
+threshold, not the region of the actual physical change — so
+`after_annotated.jpg`'s whole point (showing a human at a glance where
+`palim` thinks the desk changed) was being undermined by the same gap,
+silently, on every single annotated commit.
+
+Fixed by capturing both values once, at the same `Stable -> Changing`
+transition that already captures `beforeFrame_` (`triggerChangeScore_`/
+`triggerChangedRegion_` in `state_machine.hpp`), and building the
+eventual `CommitEvent` from those instead of the final tick's
+parameters. Motion resuming mid-`WaitForStable` (back to `Changing`,
+without passing back through `Stable`) doesn't re-capture them, for the
+same reason it doesn't overwrite `beforeFrame_` either: both describe
+the change that originally opened this commit cycle, not whichever
+tick happens to eventually confirm it settled down.
+
+Verified: `CommitsOnceStableDurationElapsesAfterChange` previously
+asserted `changeScore == 0.0` (the stable tick's own reading) — updated
+to assert the real trigger value, `20.0`.
+`CommitEventReflectsARegionOnTheExactTriggeringTick` previously passed
+its test region on the *final* tick and called that "the triggering
+tick" (the bug's own framing); renamed to
+`CommitEventReflectsTheRegionFromTheTriggeringTick` and rewritten to
+pass the region on the actual `Stable -> Changing` tick instead, with
+the final tick carrying none. Added
+`ResumedMotionDoesNotOverwriteTheOriginalTrigger`, mirroring the
+existing `beforeFrame_`-preservation coverage for both new fields
+together. All three pass. Temporarily reverting `update()` to build
+the `CommitEvent` from `changedPercent`/`changedRegion` directly (the
+original bug) reproduced it exactly: those same three tests failed
+with the predicted wrong values (`changeScore` reading `0` instead of
+`20`, both region checks reading `nullopt`), while the rest of the
+suite was unaffected. Restored, full suite (76 tests) green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)
