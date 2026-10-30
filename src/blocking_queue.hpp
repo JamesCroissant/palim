@@ -17,8 +17,14 @@ namespace palim {
 // capture -> processing frame queue: the capture thread must never
 // stall waiting on processing, since stalling it risks losing frames at
 // the camera/driver level instead of just dropping an already-stale one
-// here. Pass capacity 0 for an effectively unbounded queue (used for the
-// commit queue, where items are rare and none should ever be dropped).
+// here. Pass capacity 0 for an effectively unbounded queue, when an item
+// must never be dropped regardless of how far behind the consumer falls.
+// (main.cpp's own processing -> storage commit queue takes the other
+// option instead: a large but still *finite* capacity, generous enough
+// that it should never realistically fill given how rare a commit is --
+// a genuinely stalled storage thread still hits a hard ceiling on how
+// many queued, unwritten commits' frames it can hold in memory, rather
+// than growing without bound.)
 //
 // waitAndPop() blocks the consumer until an item is available or
 // shutdown() is called; after shutdown it drains whatever remains and

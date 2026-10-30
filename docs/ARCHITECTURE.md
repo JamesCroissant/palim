@@ -797,6 +797,32 @@ with the predicted wrong values (`changeScore` reading `0` instead of
 `20`, both region checks reading `nullopt`), while the rest of the
 suite was unaffected. Restored, full suite (76 tests) green again.
 
+## Phase 15: corrected `BlockingQueue`'s own stale comment about the commit queue
+
+A documentation-only fix this time, found while re-reading every file
+for a genuine change and turning up nothing in the code itself.
+`BlockingQueue`'s class comment (`src/blocking_queue.hpp`, present
+since the very commit that introduced both this class and `main.cpp`'s
+three-thread pipeline) said passing capacity `0` for an unbounded queue
+is "used for the commit queue, where items are rare and none should
+ever be dropped." `main.cpp` has never actually done that: its commit
+queue (`kCommitQueueCapacity`) has always been a generous but finite
+`64`, not `0` — a real difference, since a capacity of `64` *can* still
+drop an item under a sufficiently pathological stall (a storage thread
+stuck long enough for 64 commits to queue up behind it), which capacity
+`0` structurally cannot.
+
+Reworded the comment to describe what `main.cpp` actually does for the
+commit queue — a large finite capacity, generous enough to never
+realistically fill, rather than the unbounded option — instead of
+misdescribing it as the thing the queue's own `0`-capacity option is
+for. The `0`-capacity mechanism itself was already correct and already
+tested (`tests/test_blocking_queue.cpp`'s capacity-`0` cases); only the
+comment's claim about where it's actually used was wrong.
+
+Verified: comment-only change, so no new test — rebuilt clean and ran
+the full suite (76 tests) to confirm nothing else was affected.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)
