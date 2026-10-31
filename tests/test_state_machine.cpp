@@ -125,4 +125,20 @@ TEST_F(StateMachineTest, ReturnsToStableAfterCommitAndDoesNotDoubleCommit) {
     EXPECT_FALSE(tick(0.0, 10ms));
 }
 
+// The very first tick() call is also the first frame this StateMachine
+// has ever been shown -- lastFrame_ has no real baseline yet (it's
+// still a default-constructed, empty cv::Mat). If that first tick
+// already reads as "changing" (auto-exposure/white-balance settling in
+// the camera's first couple of frames, or the desk already mid-motion
+// when palim starts), treating it as a real Stable -> Changing
+// transition would capture that empty Mat as beforeFrame_ -- and
+// SnapshotWriter::write() crashes trying to cv::imwrite() an empty
+// image. Must be absorbed as pure baseline establishment instead, with
+// no transition and no eventual commit.
+TEST_F(StateMachineTest, FirstEverTickCannotStartAChangeCycleWithNoBaselineFrame) {
+    EXPECT_FALSE(tick(20.0, 10ms));  // first-ever tick, "changing" -- must not transition
+    EXPECT_FALSE(tick(0.0, 10ms));   // if it HAD transitioned, this starts WaitForStable
+    EXPECT_FALSE(tick(0.0, 210ms));  // ...and this would commit, with an empty `before`
+}
+
 }  // namespace

@@ -10,10 +10,21 @@ std::optional<CommitEvent> StateMachine::update(double changedPercent, std::opti
                                                  const CameraSettings& settings) {
     std::optional<CommitEvent> event;
     const bool changing = changedPercent > changeThresholdPercent_;
+    // lastFrame_ is still its default-constructed, empty self until the
+    // very end of this function's first-ever call sets it to a real
+    // frame -- so on that first call, there is no genuine "frame just
+    // before this one" to fall back on yet. Letting a Stable -> Changing
+    // transition through anyway would capture that empty Mat as
+    // beforeFrame_, and SnapshotWriter::write() crashes trying to
+    // cv::imwrite() an empty image. Camera auto-exposure/white-balance
+    // settling in the first couple of real frames, or the desk already
+    // mid-motion when palim starts, both make this concretely reachable,
+    // not just a theoretical gap.
+    const bool haveBaseline = !lastFrame_.empty();
 
     switch (state_) {
         case State::Stable:
-            if (changing) {
+            if (haveBaseline && changing) {
                 // lastFrame_ is the most recent frame we saw while still
                 // stable — i.e. the state of the desk just before this
                 // change started. changedPercent/changedRegion at this

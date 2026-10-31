@@ -823,6 +823,50 @@ comment's claim about where it's actually used was wrong.
 Verified: comment-only change, so no new test — rebuilt clean and ran
 the full suite (76 tests) to confirm nothing else was affected.
 
+## Phase 16: `StateMachine`'s very first tick could crash the storage thread
+
+A genuine crash this time, not a narrow preemption race: `StateMachine`
+remembers the previous frame it was shown (`lastFrame_`) so that, when
+a `Stable -> Changing` transition fires, `beforeFrame_` can be set to
+"whatever the desk looked like just before this change started."
+`lastFrame_` starts out as a default-constructed, empty `cv::Mat`, and
+nothing stopped the *very first* call to `update()` — before
+`lastFrame_` has ever been assigned a real frame — from reading as
+`changing` and capturing that empty Mat as `beforeFrame_` anyway.
+Every test in `tests/test_state_machine.cpp` happened to call `tick()`
+with a non-changing percentage first (mirroring ordinary operation,
+where the first couple of frames are rarely already wildly different),
+so none of them ever exercised the one call where it actually matters.
+
+This is concretely reachable, not theoretical: a camera's auto-
+exposure or auto-white-balance can still be settling across its first
+few real frames, producing a frame-to-frame difference large enough to
+cross `changeThresholdPercent_` before anything has genuinely "changed"
+on the desk — and if the desk already has something moving in frame
+the moment `palim` starts, the first real comparison can exceed the
+threshold outright. Either way, once that cycle eventually stabilizes
+and commits, `SnapshotWriter::write()` calls `cv::imwrite()` on an
+empty `before` Mat, which throws — uncaught inside the storage
+thread's own lambda, so it takes the whole process down via
+`std::terminate()`.
+
+Fixed with one additional condition: `haveBaseline` (`!lastFrame_.empty()`),
+checked alongside `changing` before allowing a `Stable -> Changing`
+transition at all. The very first call, with no real baseline yet,
+is now absorbed as pure initialization — `lastFrame_` gets set to a
+real frame at the end of the function either way — and can't start a
+commit cycle no matter how large its own `changedPercent` reads. Every
+call from the second one onward behaves exactly as before.
+
+Verified: added `FirstEverTickCannotStartAChangeCycleWithNoBaselineFrame`
+(first tick already "changing," confirmed via the fixture's single
+shared `cv::Mat` that a commit would otherwise carry an empty `before`)
+to `tests/test_state_machine.cpp`. Before the fix, this test failed
+exactly as predicted — a commit fired from that first tick's cycle.
+Temporarily reverting the `haveBaseline &&` check reproduced the
+failure again, isolated to this one test; the rest of the suite was
+unaffected either way. Restored, full suite (77 tests) green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

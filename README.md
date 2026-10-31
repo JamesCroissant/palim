@@ -136,7 +136,9 @@ ctest --test-dir build            # or: ./build/palim_tests
 ```
 
 Covers `ChangeDetector` (including changed-region bounding boxes),
-`StateMachine`, `RingBuffer`, `FrameHistory`, `BlockingQueue`
+`StateMachine` (including that its very first tick ever, even if it
+already reads as "changing," can't start a commit cycle with no real
+baseline frame to use as `before`), `RingBuffer`, `FrameHistory`, `BlockingQueue`
 (including concurrent producer/consumer and ThreadSanitizer-clean
 shutdown behavior), `GitInfo`, `commit_metadata` parsing (including
 `changed_region`, its `null` form, its absence in older commits, and
