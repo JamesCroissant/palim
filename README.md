@@ -180,16 +180,26 @@ All of that is configurable via flags instead of recompiling:
 | `--stable-ms` | how long the desk must hold still before committing | `2000` |
 | `--output-dir` | where `commits/NNN/` snapshots are written | `commits` |
 | `--frame-history-capacity` | recent frames `FrameHistory` keeps, to pick the sharpest "after" frame from | `90` (~3s at 30fps) |
+| `--max-commits` | cap on how many `commits/NNN/` directories ever exist at once -- past it, the oldest are deleted after each new write | unlimited |
 
-`--width`/`--height`/`--frame-history-capacity` must be positive,
-`--stable-ms` must be >= 0, and `--threshold` must be a finite number
->= 0 -- each is rejected at parse time rather than silently accepted (a
-negative width/height would otherwise become a huge unsigned value in
-the V4L2 format request, a non-positive frame-history capacity would
-divide by zero on the very first frame pushed into it, a negative
-stable duration would commit on essentially the next tick instead of
-waiting for real stability, and `nan`/`inf`/negative parse cleanly as
-doubles but mean nothing as a threshold).
+`--width`/`--height`/`--frame-history-capacity`/`--max-commits` must be
+positive, `--stable-ms` must be >= 0, and `--threshold` must be a
+finite number >= 0 -- each is rejected at parse time rather than
+silently accepted (a negative width/height would otherwise become a
+huge unsigned value in the V4L2 format request, a non-positive
+frame-history capacity would divide by zero on the very first frame
+pushed into it, a negative stable duration would commit on essentially
+the next tick instead of waiting for real stability, and
+`nan`/`inf`/negative parse cleanly as doubles but mean nothing as a
+threshold).
+
+Left running unattended, `commits/` only ever grows -- two JPEGs (three
+with a localized region, see `--threshold` above) per commit, with no
+upper bound on how many commits ever accumulate. `--max-commits`
+caps it: once exceeded, the oldest commits are deleted (directory and
+all) after each new write, newest-first preserved. Omit it (the
+default) to keep every commit forever, same as before this flag
+existed.
 
 Developed against a Logitech/Logicool C270 on Linux; any UVC webcam that
 supports YUYV capture should work. Linux-only — there's no cross-platform
@@ -228,6 +238,7 @@ Sections referenced below are from the original project spec; see
 - [x] Clean shutdown on `SIGINT`/`SIGTERM`, joining all three threads instead of risking a half-written commit (Phase 10)
 - [x] Restarting `palim` against an existing `commits/` directory resumes numbering instead of overwriting earlier commits (Phase 11)
 - [x] The capture thread gives up cleanly (instead of busy-spinning forever) after enough consecutive failed frame grabs in a row — a disconnected camera or a stuck driver (Phase 12)
+- [x] `--max-commits` bounds disk usage for an unattended, long-running `palim` by pruning the oldest commits once the cap is exceeded (Phase 17)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 

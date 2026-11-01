@@ -27,19 +27,23 @@ struct Config {
     // would be a modulo-by-zero on the very first frame -- caught here,
     // at the CLI boundary, rather than inside that general-purpose class.
     int frameHistoryCapacity = 90;
+    // Caps how many commits/NNN directories SnapshotWriter ever keeps at
+    // once -- see its own comment for why. 0 (the default) means
+    // unlimited, matching this project's behavior before this existed.
+    int maxCommits = 0;
 };
 
 // Parses palim's CLI flags into a Config, starting from the defaults
 // above. Throws std::invalid_argument (with a human-readable message)
 // on an unrecognized flag, a missing value, a value that fails to parse
 // as the expected type, or one that parses but is out of range
-// (--width/--height/--frame-history-capacity <= 0, --stable-ms < 0,
-// --threshold non-finite or negative -- see config.cpp's
-// parseIntAtLeast/parseNonNegativeFiniteDouble).
+// (--width/--height/--frame-history-capacity/--max-commits <= 0,
+// --stable-ms < 0, --threshold non-finite or negative -- see
+// config.cpp's parseIntAtLeast/parseNonNegativeFiniteDouble).
 //
 // Supported flags: --device <path>, --width <px>, --height <px>,
 // --threshold <percent>, --stable-ms <ms>, --output-dir <path>,
-// --frame-history-capacity <frames>.
+// --frame-history-capacity <frames>, --max-commits <count>.
 Config parseArgs(const std::vector<std::string>& args);
 
 }  // namespace palim

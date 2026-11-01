@@ -91,4 +91,84 @@ TEST_F(SnapshotWriterTest, IgnoresNonNumericSubdirectories) {
     EXPECT_TRUE(std::filesystem::exists(dir / "002"));
 }
 
+// maxCommits defaults to 0 (unlimited) -- writing well past any
+// plausible cap must never delete anything, matching this project's
+// behavior before the cap existed.
+TEST_F(SnapshotWriterTest, DefaultMaxCommitsOfZeroNeverPrunes) {
+    palim::SnapshotWriter writer(dir);
+    for (int i = 0; i < 5; ++i) {
+        writer.write(makeCommitEvent());
+    }
+
+    EXPECT_TRUE(std::filesystem::exists(dir / "001"));
+    EXPECT_TRUE(std::filesystem::exists(dir / "005"));
+}
+
+// With a cap set, writing past it deletes the oldest (lowest-numbered)
+// commits first -- the most recent maxCommits ones survive.
+TEST_F(SnapshotWriterTest, WritingPastMaxCommitsDeletesTheOldestFirst) {
+    palim::SnapshotWriter writer(dir, /*maxCommits=*/3);
+    for (int i = 0; i < 5; ++i) {
+        writer.write(makeCommitEvent());
+    }
+
+    EXPECT_FALSE(std::filesystem::exists(dir / "001"));
+    EXPECT_FALSE(std::filesystem::exists(dir / "002"));
+    EXPECT_TRUE(std::filesystem::exists(dir / "003"));
+    EXPECT_TRUE(std::filesystem::exists(dir / "004"));
+    EXPECT_TRUE(std::filesystem::exists(dir / "005"));
+}
+
+// A backlog from a previous run under a larger (or no) cap is trimmed
+// down to a newly-lowered cap in one pass on the very next write, not
+// retroactively on construction and not one write() at a time.
+TEST_F(SnapshotWriterTest, LoweringTheCapTrimsAnExistingBacklogOnTheNextWrite) {
+    {
+        palim::SnapshotWriter firstRun(dir);  // unlimited
+        for (int i = 0; i < 5; ++i) {
+            firstRun.write(makeCommitEvent());
+        }
+    }
+
+    palim::SnapshotWriter secondRun(dir, /*maxCommits=*/2);
+    // Construction alone (findNextAvailableId's own scan) must not prune.
+    EXPECT_TRUE(std::filesystem::exists(dir / "001"));
+
+    secondRun.write(makeCommitEvent());  // writes 006, then prunes to the cap
+
+    EXPECT_TRUE(std::filesystem::exists(dir / "006"));
+    EXPECT_TRUE(std::filesystem::exists(dir / "005"));
+    EXPECT_FALSE(std::filesystem::exists(dir / "004"));
+    EXPECT_FALSE(std::filesystem::exists(dir / "001"));
+}
+
+// Pruning must delete directories, not just leave an empty shell behind
+// -- a pruned commit's before.jpg should not survive as orphaned data.
+TEST_F(SnapshotWriterTest, PruningActuallyRemovesTheDirectoryContents) {
+    palim::SnapshotWriter writer(dir, /*maxCommits=*/1);
+    writer.write(makeCommitEvent());
+    ASSERT_TRUE(std::filesystem::exists(dir / "001" / "before.jpg"));
+
+    writer.write(makeCommitEvent());
+
+    EXPECT_FALSE(std::filesystem::exists(dir / "001"));
+    EXPECT_FALSE(std::filesystem::exists(dir / "001" / "before.jpg"));
+}
+
+// Pruning must not disturb the numbering sequence -- the next write
+// after a prune still continues from the true highest ID ever written,
+// not from however many directories happen to currently exist.
+TEST_F(SnapshotWriterTest, PruningDoesNotResetTheIdSequence) {
+    palim::SnapshotWriter writer(dir, /*maxCommits=*/2);
+    for (int i = 0; i < 4; ++i) {
+        writer.write(makeCommitEvent());
+    }
+    EXPECT_TRUE(std::filesystem::exists(dir / "003"));
+    EXPECT_TRUE(std::filesystem::exists(dir / "004"));
+
+    writer.write(makeCommitEvent());
+    EXPECT_TRUE(std::filesystem::exists(dir / "005"));
+    EXPECT_FALSE(std::filesystem::exists(dir / "003"));
+}
+
 }  // namespace

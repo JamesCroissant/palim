@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
         std::cerr << "Argument error: " << e.what() << "\n";
         std::cerr << "Usage: palim [--device PATH] [--width PX] [--height PX] "
                      "[--threshold PERCENT] [--stable-ms MS] [--output-dir DIR] "
-                     "[--frame-history-capacity FRAMES]\n";
+                     "[--frame-history-capacity FRAMES] [--max-commits COUNT]\n";
         return 1;
     }
 
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
 
     // --- Storage thread: the only thread that touches disk.
     std::thread storageThread([&] {
-        palim::SnapshotWriter snapshotWriter(config.outputDir);
+        palim::SnapshotWriter snapshotWriter(config.outputDir, config.maxCommits);
         while (true) {
             auto commit = commitQueue.waitAndPop();
             if (!commit) {

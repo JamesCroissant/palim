@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <utility>
 
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
@@ -35,17 +36,17 @@ std::string jsonOptionalInt(std::optional<int> value) {
     return value ? std::to_string(*value) : "null";
 }
 
-// Scans outputDir for subdirectories this class has already written
+// Scans outputDir for subdirectories this class could have written
 // (named "NNN", all digits -- anything else, a stray file or a
 // directory a human created, is ignored rather than treated as a parse
-// error) and returns one past the highest ID found, or 1 if none exist.
-// Restarting palim against a directory with existing commits must
-// resume numbering from there, not restart at 1 and silently overwrite
-// them -- the exact failure mode this function exists to prevent.
-int findNextAvailableId(const std::filesystem::path& outputDir) {
-    int maxId = 0;
+// error), returning each one's numeric ID paired with its path, sorted
+// ascending (oldest first). Shared by findNextAvailableId() (wants the
+// newest -- the last entry) and pruneOldCommits() (wants to delete the
+// oldest -- the first few entries).
+std::vector<std::pair<int, std::filesystem::path>> listCommitDirs(const std::filesystem::path& outputDir) {
+    std::vector<std::pair<int, std::filesystem::path>> dirs;
     if (!std::filesystem::exists(outputDir)) {
-        return 1;
+        return dirs;
     }
     for (const auto& entry : std::filesystem::directory_iterator(outputDir)) {
         if (!entry.is_directory()) {
@@ -59,17 +60,27 @@ int findNextAvailableId(const std::filesystem::path& outputDir) {
             continue;
         }
         try {
-            maxId = std::max(maxId, std::stoi(name));
+            dirs.emplace_back(std::stoi(name), entry.path());
         } catch (const std::exception&) {
             continue;  // e.g. a numeric name too long for int -- skip it
         }
     }
-    return maxId + 1;
+    std::sort(dirs.begin(), dirs.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+    return dirs;
+}
+
+// Restarting palim against a directory with existing commits must
+// resume numbering from there, not restart at 1 and silently overwrite
+// them -- the exact failure mode this function exists to prevent.
+int findNextAvailableId(const std::filesystem::path& outputDir) {
+    const auto dirs = listCommitDirs(outputDir);
+    return dirs.empty() ? 1 : dirs.back().first + 1;
 }
 
 }  // namespace
 
-SnapshotWriter::SnapshotWriter(std::filesystem::path outputDir) : outputDir_(std::move(outputDir)) {
+SnapshotWriter::SnapshotWriter(std::filesystem::path outputDir, int maxCommits)
+    : outputDir_(std::move(outputDir)), maxCommits_(maxCommits) {
     std::filesystem::create_directories(outputDir_);
     nextId_ = findNextAvailableId(outputDir_);
 }
@@ -156,6 +167,28 @@ void SnapshotWriter::write(const CommitEvent& event) {
          << "}\n";
 
     ++nextId_;
+    pruneOldCommits();
+}
+
+// Deletes the oldest (lowest-numbered) commit directories until at most
+// maxCommits_ remain. A no-op when maxCommits_ is 0 (unlimited) or the
+// count hasn't exceeded it yet -- this runs after every write(), so
+// there's never more than one commit's worth to prune in the common
+// case, but a backlog from a previous run under a larger (or no) limit
+// is trimmed down to the new cap in one pass rather than one write() at
+// a time.
+void SnapshotWriter::pruneOldCommits() {
+    if (maxCommits_ <= 0) {
+        return;
+    }
+    const auto dirs = listCommitDirs(outputDir_);  // ascending by ID, oldest first
+    if (dirs.size() <= static_cast<std::size_t>(maxCommits_)) {
+        return;
+    }
+    const std::size_t toRemove = dirs.size() - static_cast<std::size_t>(maxCommits_);
+    for (std::size_t i = 0; i < toRemove; ++i) {
+        std::filesystem::remove_all(dirs[i].second);
+    }
 }
 
 }  // namespace palim

@@ -867,6 +867,63 @@ Temporarily reverting the `haveBaseline &&` check reproduced the
 failure again, isolated to this one test; the rest of the suite was
 unaffected either way. Restored, full suite (77 tests) green again.
 
+## Phase 17: `--max-commits` bounds disk usage instead of growing forever
+
+Every genuinely similar tool — timelapse cameras, motion-triggered
+security recorders, 3D-printer watch-and-log utilities — has some form
+of retention policy, because the one thing they all have in common
+with `palim` is running unattended, potentially for days or weeks, each
+commit writing two JPEGs (plus an optional third, `after_annotated.jpg`)
+to disk. `palim` had no such thing: `commits/` only ever grew, with
+nothing to stop an unattended run from eventually filling the disk.
+Phase 11 made restarting safe (resuming numbering instead of
+overwriting); this is the complementary problem — making *staying up
+indefinitely* safe too.
+
+Added `SnapshotWriter`'s `maxCommits` constructor parameter (default
+`0`, meaning unlimited — this project's exact behavior before this
+phase) and a matching `--max-commits COUNT` CLI flag
+(`Config::maxCommits`, validated the same way `--frame-history-capacity`
+already is: `parseIntAtLeast(..., 1)`, since `0`'s meaning is reserved
+for the default rather than something a user passes explicitly).
+`write()` now calls a new `pruneOldCommits()` after every commit: if
+more than `maxCommits` commit directories exist, it deletes the
+oldest (lowest-numbered) ones — via `std::filesystem::remove_all()`,
+so a pruned commit's `before.jpg`/`after.jpg`/`metadata.json` are
+actually gone, not an orphaned empty directory — until back at the
+cap. A no-op, as cheaply as a single size comparison, whenever the cap
+isn't set or hasn't been reached yet.
+
+`findNextAvailableId()`'s own directory scan (Phase 11) and this new
+pruning both need the same thing — every numeric-named subdirectory,
+sorted by ID — so that scan was factored out into a shared
+`listCommitDirs()` returning `(id, path)` pairs ascending (oldest
+first): `findNextAvailableId()` reads the last entry for the highest
+ID, `pruneOldCommits()` deletes however many of the first entries are
+over the cap. Lowering the cap against a directory that already has
+more commits than the new limit (e.g. a backlog from an earlier,
+unlimited run) isn't trimmed retroactively on construction — only the
+*next* `write()` triggers `pruneOldCommits()`, which then deletes
+however many it takes to reach the cap in that one pass, not one
+write() at a time. Numbering itself is never affected by pruning:
+`nextId_` only ever increments, so the ID sequence stays the true
+count of commits ever written, regardless of how many of the earlier
+ones have since been deleted.
+
+Verified: added `DefaultMaxCommitsOfZeroNeverPrunes`,
+`WritingPastMaxCommitsDeletesTheOldestFirst`,
+`LoweringTheCapTrimsAnExistingBacklogOnTheNextWrite`,
+`PruningActuallyRemovesTheDirectoryContents`, and
+`PruningDoesNotResetTheIdSequence` to `tests/test_snapshot_writer.cpp`,
+plus `ParseArgs` cases for `--max-commits`' override and its
+non-positive rejection. Temporarily short-circuiting
+`pruneOldCommits()` to always return early reproduced the predicted
+failures exactly — all four pruning-dependent tests failed, while the
+unlimited-default test and all four pre-existing (pre-Phase-17)
+`SnapshotWriterTest` cases stayed green — confirming the new tests
+actually exercise pruning rather than passing vacuously. Restored,
+full suite (84 tests) green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

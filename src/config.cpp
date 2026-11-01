@@ -87,6 +87,8 @@ Config parseArgs(const std::vector<std::string>& args) {
             config.outputDir = nextValue(arg, args, i);
         } else if (arg == "--frame-history-capacity") {
             config.frameHistoryCapacity = parseIntAtLeast(arg, nextValue(arg, args, i), 1);
+        } else if (arg == "--max-commits") {
+            config.maxCommits = parseIntAtLeast(arg, nextValue(arg, args, i), 1);
         } else {
             throw std::invalid_argument("unrecognized argument: " + arg);
         }
