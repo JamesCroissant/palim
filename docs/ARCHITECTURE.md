@@ -924,6 +924,50 @@ unlimited-default test and all four pre-existing (pre-Phase-17)
 actually exercise pruning rather than passing vacuously. Restored,
 full suite (84 tests) green again.
 
+## Phase 18: `git status --porcelain` parsing is now unit-tested against synthetic input
+
+Not a bug, not a feature — a real gap in test coverage, found while
+re-reading every file for something genuine. Phase 4's own `GitInfo`
+tests (`tests/test_git_info.cpp`) only ever ran `captureGitInfo()`
+against the real filesystem: once from inside this actual repo
+(asserting only that `available` is true and the commit hash is 40
+hex characters — never anything about `dirtyFiles`' actual content)
+and once from `/tmp` (asserting the all-empty "not a repo" case). The
+line-parsing logic that turns `git status --porcelain`'s raw text into
+`dirtyFiles` — skip the 2-character status code and the space after
+it, one entry per line — had no test exercising it with controlled
+input at all. Whatever this repo's own working tree happened to look
+like at test time was the only input it was ever checked against.
+
+Pulled that parsing out of `captureGitInfo()`'s body into its own
+function, `parseDirtyFiles(const std::string& porcelainOutput)`
+(declared in `git_info.hpp`, so it's reachable from tests the same way
+`ChangeDetector`/`StateMachine`/`commit_metadata`'s own pure logic
+already is) — a plain string-in, `vector<string>`-out function with no
+subprocess, no filesystem, and no real Git repository involved.
+`captureGitInfo()` now just calls it on whatever `git status
+--porcelain` actually returned.
+
+Added `tests/test_git_info.cpp` cases covering: empty output; ordinary
+modified/added/untracked lines (` M`, `A `, `??` — the same 2-character-
+code-plus-space shape); a rename line (`R  old -> new`), confirming it
+comes through as one combined `"old -> new"` string rather than being
+split into two paths (documenting the current behavior precisely,
+not claiming it's the only sensible one — splitting renames into two
+entries is a separate, deliberate design decision for another day, not
+something to silently change while just adding coverage); a trailing
+`\r` being stripped; and lines too short to contain a path being
+skipped rather than producing a bogus empty or truncated entry.
+
+Verified: all five new tests pass against the real implementation.
+Two independent, deliberately narrow breaks each reproduced exactly
+one predicted failure and nothing else: removing the `rstrip()` call
+(keeping the length guard) failed only `StripsATrailingCarriageReturn`;
+separately replacing the length guard with an unconditional, bounds-safe
+substring (so every line — including the too-short ones — produced an
+entry) failed only `SkipsLinesTooShortToContainAPath`. Both reverted,
+full suite (89 tests) green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

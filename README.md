@@ -140,7 +140,11 @@ Covers `ChangeDetector` (including changed-region bounding boxes),
 already reads as "changing," can't start a commit cycle with no real
 baseline frame to use as `before`), `RingBuffer`, `FrameHistory`, `BlockingQueue`
 (including concurrent producer/consumer and ThreadSanitizer-clean
-shutdown behavior), `GitInfo`, `commit_metadata` parsing (including
+shutdown behavior), `GitInfo` (including `parseDirtyFiles`'s handling
+of `git status --porcelain` lines -- ordinary entries, a rename kept as
+one combined string, a trailing `\r`, and lines too short to contain a
+path -- against synthetic text, not just whatever this repo's own
+working tree looks like at test time), `commit_metadata` parsing (including
 `changed_region`, its `null` form, its absence in older commits, and
 dirty file paths containing a literal backslash or double quote),
 CLI argument parsing (`parseArgs`), and `Camera`'s failure paths (no

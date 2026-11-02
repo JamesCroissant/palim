@@ -39,6 +39,20 @@ std::optional<std::string> runCommand(const std::string& command) {
 
 }  // namespace
 
+std::vector<std::string> parseDirtyFiles(const std::string& porcelainOutput) {
+    std::vector<std::string> dirtyFiles;
+    std::istringstream lines(porcelainOutput);
+    std::string line;
+    // Each line is "XY <path>" (or "XY <old> -> <new>" for renames);
+    // skip the 2-character status code and the space after it.
+    while (std::getline(lines, line)) {
+        if (line.size() > 3) {
+            dirtyFiles.push_back(rstrip(line.substr(3)));
+        }
+    }
+    return dirtyFiles;
+}
+
 GitInfo captureGitInfo() {
     GitInfo info;
 
@@ -50,15 +64,7 @@ GitInfo captureGitInfo() {
     info.available = true;
 
     if (auto status = runCommand("git status --porcelain 2>/dev/null")) {
-        std::istringstream lines(*status);
-        std::string line;
-        // Each line is "XY <path>" (or "XY <old> -> <new>" for renames);
-        // skip the 2-character status code and the space after it.
-        while (std::getline(lines, line)) {
-            if (line.size() > 3) {
-                info.dirtyFiles.push_back(rstrip(line.substr(3)));
-            }
-        }
+        info.dirtyFiles = parseDirtyFiles(*status);
     }
 
     return info;
