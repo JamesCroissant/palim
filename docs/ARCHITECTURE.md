@@ -968,6 +968,62 @@ substring (so every line — including the too-short ones — produced an
 entry) failed only `SkipsLinesTooShortToContainAPath`. Both reverted,
 full suite (89 tests) green again.
 
+## Phase 19: `palim-timeline`'s own output formatting is now unit-tested
+
+The biggest remaining test-coverage gap, found the same way Phase 18's
+was: `timeline_main.cpp` had no test file at all, for any of it.
+Phase 6's own "Verified" paragraph describes generating a synthetic
+`commits/` directory and checking `palim-timeline`'s output *by eye*
+("confirmed `palim-timeline` both displays each commit's data correctly
+and detects the between-commit setting changes accurately") — real
+verification at the time, but never captured as a repeatable test.
+Every formatting decision since (what `?` means for an unsupported
+camera control, exactly which characters a hash gets truncated to,
+that a file going from dirty back to clean is deliberately *not*
+reported) existed only as prose in a comment, not as something a
+future change could accidentally break without anyone noticing.
+
+The obstacle was structural: `shortHash()`, `printOptionalIntChange()`,
+`printGitChange()`, and `printCommit()` all lived in `timeline_main.cpp`,
+printing straight to `std::cout` — and that file also defines `int
+main()`, so nothing in it can be linked into `palim_tests` without a
+duplicate-`main` clash.
+
+Moved all four into a new `src/timeline_format.hpp`/`.cpp` (added to
+`palim_lib`, the same static library every other testable piece of
+logic already lives in), renamed to the `format*` verb to match their
+new return-a-string shape (`formatShortHash`, `formatOptionalIntChange`,
+`formatGitChange`, `formatCommit`), and converted from printing
+directly to building an `std::ostringstream` and returning its `.str()`.
+`timeline_main.cpp` now does nothing but call `listCommits()` and
+`std::cout <<` each function's result in the same order as before — a
+pure refactor, not a rewrite: verified by capturing `palim-timeline`'s
+real output against a synthetic two-commit directory (differing
+exposure, a moved Git commit, a newly-dirty file) both before and
+after the change and diffing them — byte-for-byte identical.
+
+Added `tests/test_timeline_format.cpp`: `formatShortHash` truncating
+correctly, including hashes already short enough; `formatOptionalIntChange`
+being empty when nothing changed and using `?` for a `std::nullopt`
+side; `formatGitChange` being empty with no Git on either side or an
+identical commit and dirty-file list, reporting a moved commit hash,
+reporting a newly-dirty file, and — the one behavior worth pinning
+down precisely — *not* reporting a file that went from dirty back to
+clean, since this is deliberately a one-directional "what got worse"
+diff, not a symmetric one; and `formatCommit` covering the region line,
+optional camera controls appearing only when present, and the Git
+summary line appearing only when available.
+
+Verified: all 16 new tests pass. Temporarily changed `formatGitChange`'s
+newly-dirty computation to `after.dirtyFiles` directly (as if every
+file in the *after* list were newly dirty) and confirmed exactly the
+two tests depending on that distinction —
+`ReportsNewlyDirtyFiles` and `DoesNotReportFilesThatBecameClean` —
+failed, while every other test (including the Git-availability and
+identical-state cases) stayed green. Restored, full suite (105 tests)
+green again, and `palim-timeline`'s real output re-confirmed
+byte-for-byte identical to the pre-refactor baseline once more.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

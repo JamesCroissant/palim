@@ -147,11 +147,14 @@ path -- against synthetic text, not just whatever this repo's own
 working tree looks like at test time), `commit_metadata` parsing (including
 `changed_region`, its `null` form, its absence in older commits, and
 dirty file paths containing a literal backslash or double quote),
-CLI argument parsing (`parseArgs`), and `Camera`'s failure paths (no
-device present, a non-V4L2 device). `Camera::grab()` against real
-hardware isn't covered here — that needs an actual camera. Pass
-`-DPALIM_BUILD_TESTS=OFF` to `cmake` to skip building the test suite
-(and its GTest dependency) entirely.
+CLI argument parsing (`parseArgs`), `Camera`'s failure paths (no
+device present, a non-V4L2 device), and `palim-timeline`'s own output
+formatting (`timeline_format`: hash truncation, the `?`-for-unsupported-
+control convention, and that a file going from dirty back to clean is
+deliberately *not* reported, since that diff is one-directional by
+design). `Camera::grab()` against real hardware isn't covered here —
+that needs an actual camera. Pass `-DPALIM_BUILD_TESTS=OFF` to `cmake`
+to skip building the test suite (and its GTest dependency) entirely.
 
 ## Running
 
