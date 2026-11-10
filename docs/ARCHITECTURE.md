@@ -1024,6 +1024,39 @@ identical-state cases) stayed green. Restored, full suite (105 tests)
 green again, and `palim-timeline`'s real output re-confirmed
 byte-for-byte identical to the pre-refactor baseline once more.
 
+## Phase 20: `computeSharpness` gets its own direct tests
+
+Another gap found the same way Phases 18 and 19's were: `frame_quality.cpp`
+has exactly one function, `computeSharpness` — Laplacian variance, used
+by both `SnapshotWriter` (records the number in `metadata.json`) and
+`FrameHistory` (picks the sharpest of several candidate frames) — and it
+had no test file of its own. `FrameHistoryTest` exercises it, but only
+*relatively*: every candidate frame there has random noise added (even
+the "sharpest" index), so those tests only ever check that one noisy
+frame scores higher than another, never the function's own documented
+contract in isolation ("variance = sharpness score", "higher means more
+in-focus").
+
+Added `tests/test_frame_quality.cpp`: a perfectly uniform frame (no
+noise at all) scores exactly `0.0` — the one input where the expected
+answer isn't "some number bigger/smaller than some other number" but a
+precise value, since a constant image's Laplacian is zero everywhere;
+this held at both ends of the shade range (`0` and `255`), not just one
+arbitrary value. A frame with real edge content (a black/white split)
+scores strictly above `0`. Blurring that same edge frame with
+`cv::GaussianBlur` — softening the exact feature this score is meant to
+detect — lowers its score below the unblurred original's.
+
+Verified: temporarily changed the return value to the Laplacian's mean
+magnitude instead of its variance (`std::abs(mean[0])` instead of
+`stddev[0] * stddev[0]`) — still zero for a perfectly flat region (a
+constant image's Laplacian mean is also zero, so the uniform-frame tests
+stayed green, as predicted), but a sharp edge's positive and negative
+Laplacian responses mostly cancel out in the mean, so both the
+positive-sharpness and the blur-lowers-sharpness tests failed exactly as
+expected, with nothing else affected. Restored, full suite (109 tests)
+green again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

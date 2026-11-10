@@ -138,7 +138,12 @@ ctest --test-dir build            # or: ./build/palim_tests
 Covers `ChangeDetector` (including changed-region bounding boxes),
 `StateMachine` (including that its very first tick ever, even if it
 already reads as "changing," can't start a commit cycle with no real
-baseline frame to use as `before`), `RingBuffer`, `FrameHistory`, `BlockingQueue`
+baseline frame to use as `before`), `RingBuffer`, `FrameHistory`,
+`computeSharpness` (`frame_quality`: a perfectly uniform frame scores
+exactly 0, a frame with real edge content scores above 0, and blurring
+that same frame lowers its score -- the documented "higher means more
+in-focus" contract pinned down with concrete content, not just two
+already-noisy frames compared to each other), `BlockingQueue`
 (including concurrent producer/consumer and ThreadSanitizer-clean
 shutdown behavior), `GitInfo` (including `parseDirtyFiles`'s handling
 of `git status --porcelain` lines -- ordinary entries, a rename kept as

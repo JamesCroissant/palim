@@ -45,6 +45,7 @@ if(PALIM_BUILD_TESTS)
         tests/test_state_machine.cpp
         tests/test_ring_buffer.cpp
         tests/test_frame_history.cpp
+        tests/test_frame_quality.cpp
         tests/test_blocking_queue.cpp
         tests/test_git_info.cpp
         tests/test_commit_metadata.cpp
