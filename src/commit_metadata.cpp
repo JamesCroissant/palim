@@ -93,17 +93,40 @@ std::optional<std::string> extractRawValue(const std::string& json, const std::s
     return value;
 }
 
+// std::stoi/std::stod throw on a value that isn't a parseable number at
+// all -- reachable not just from a hand-edited file, but from a write
+// torn mid-field (the process killed, or the disk full, between writing
+// a key's colon and its value): extractRawValue still finds the key and
+// returns whatever (possibly empty) text sits before the next
+// ','/'\n'/'}', so the raw/null checks below never catch it, and the
+// stoi/stod call sees something like "" instead. Every other way this
+// function already tolerates a bad document -- a missing key, an
+// explicit "null", a missing "changed_region" -- returns cleanly rather
+// than throwing; an unparseable-but-present value is treated the same
+// way here, not as a reason to crash whatever's reading this document
+// (readCommitMetadata, and through it palim-timeline's whole listing).
 std::optional<int> extractOptionalInt(const std::string& json, const std::string& key) {
     auto raw = extractRawValue(json, key);
     if (!raw || *raw == "null") {
         return std::nullopt;
     }
-    return std::stoi(*raw);
+    try {
+        return std::stoi(*raw);
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
 }
 
 double extractDouble(const std::string& json, const std::string& key) {
     auto raw = extractRawValue(json, key);
-    return raw ? std::stod(*raw) : 0.0;
+    if (!raw) {
+        return 0.0;
+    }
+    try {
+        return std::stod(*raw);
+    } catch (const std::exception&) {
+        return 0.0;
+    }
 }
 
 std::optional<ChangedRegion> extractChangedRegion(const std::string& json) {

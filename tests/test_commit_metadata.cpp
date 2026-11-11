@@ -168,6 +168,44 @@ TEST_F(CommitMetadataTest, NullCameraControlsBecomeNullopt) {
     EXPECT_TRUE(m->dirtyFiles.empty());
 }
 
+// A write torn mid-field (process killed, or disk full, between a
+// key's colon and its value) leaves extractRawValue() finding the key
+// but capturing empty or garbage text before the next ','/'\n'/'}' --
+// neither missing nor an explicit "null", so the usual nullopt checks
+// don't catch it, and std::stoi/std::stod would otherwise throw
+// std::invalid_argument straight out of readCommitMetadata() (and
+// crash palim-timeline's whole listing over one bad commit). Confirmed
+// this was a real, reachable crash before the fix: building this exact
+// document and calling readCommitMetadata() directly terminated the
+// process via an uncaught std::invalid_argument from std::stoi.
+TEST_F(CommitMetadataTest, FieldTornMidWriteParsesAsMissingInsteadOfThrowing) {
+    writeMetadata(R"({
+  "timestamp": "2026-09-16T00:52:13",
+  "change_score": 42.5,
+  "sharpness_score": 1201.63,
+  "camera": {
+    "width": 1280,
+    "height": 720,
+    "exposure_auto":,
+    "exposure_absolute": 220,
+    "gain": 32,
+    "white_balance_auto": 1,
+    "white_balance_temperature": 4600
+  },
+  "git": {"available": false}
+})");
+
+    auto m = palim::readCommitMetadata(dir);
+    ASSERT_TRUE(m.has_value());
+    EXPECT_FALSE(m->exposureAuto.has_value());
+    // The fields on either side of the torn one parsed normally --
+    // this is about tolerating the one bad field, not losing the whole
+    // document around it.
+    EXPECT_EQ(m->width, 1280);
+    EXPECT_TRUE(m->exposureAbsolute.has_value());
+    EXPECT_EQ(*m->exposureAbsolute, 220);
+}
+
 // SnapshotWriter's jsonEscape() writes a literal trailing backslash as
 // two backslashes ("\\" in the JSON source). The old escape-skip logic
 // only looked at the single character right before a candidate closing
