@@ -150,8 +150,12 @@ of `git status --porcelain` lines -- ordinary entries, a rename kept as
 one combined string, a trailing `\r`, and lines too short to contain a
 path -- against synthetic text, not just whatever this repo's own
 working tree looks like at test time), `commit_metadata` parsing (including
-`changed_region`, its `null` form, its absence in older commits, and
-dirty file paths containing a literal backslash or double quote),
+`changed_region`, its `null` form, its absence in older commits,
+dirty file paths containing a literal backslash or double quote, a
+numeric field left empty by a write torn mid-field, and `listCommits`
+ordering commits by their actual numeric ID rather than lexicographic
+directory-name order once IDs cross a digit-width boundary like
+999 → 1000),
 CLI argument parsing (`parseArgs`), `Camera`'s failure paths (no
 device present, a non-V4L2 device), and `palim-timeline`'s own output
 formatting (`timeline_format`: hash truncation, the `?`-for-unsupported-

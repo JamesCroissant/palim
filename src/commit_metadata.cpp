@@ -203,6 +203,36 @@ std::optional<CommitMetadata> readCommitMetadata(const std::filesystem::path& co
     return m;
 }
 
+namespace {
+
+// SnapshotWriter::write() zero-pads a commit's numeric ID to 3 digits
+// (std::setw(3)), but that only sets a *minimum* width -- it doesn't
+// truncate or widen the padding once an ID needs more digits than that,
+// so directory "1000" is 4 characters, not "1000" re-padded to stay
+// ahead of "999". A long-running, unattended session (exactly the use
+// case --max-commits exists for) can genuinely reach a 4-digit commit
+// count, and from there plain lexicographic path comparison gets the
+// order wrong: "1000" sorts *before* "999" as a string ('1' < '9'),
+// even though 1000 > 999 as a commit number. Parsing each directory
+// name as the integer ID it actually is (the same way
+// SnapshotWriter's own listCommitDirs() already does, for the same
+// reason) and sorting by that instead makes the order correct no
+// matter how many digits a commit ID ever grows to -- not just safe up
+// to some larger but still eventually-reachable padding width.
+std::optional<int> parseCommitId(const std::filesystem::path& dir) {
+    const std::string name = dir.filename().string();
+    if (name.empty() || !std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isdigit(c) != 0; })) {
+        return std::nullopt;
+    }
+    try {
+        return std::stoi(name);
+    } catch (const std::exception&) {
+        return std::nullopt;  // e.g. a numeric name too long for int
+    }
+}
+
+}  // namespace
+
 std::vector<CommitMetadata> listCommits(const std::filesystem::path& commitsDir) {
     std::vector<CommitMetadata> result;
     if (!std::filesystem::exists(commitsDir)) {
@@ -215,7 +245,22 @@ std::vector<CommitMetadata> listCommits(const std::filesystem::path& commitsDir)
             dirs.push_back(entry.path());
         }
     }
-    std::sort(dirs.begin(), dirs.end());  // zero-padded names -> lexicographic == numeric
+    // Directories outside SnapshotWriter's own "NNN" naming (a stray
+    // file, something a human created) have no parsed ID -- fall back
+    // to comparing those by path so the sort stays a strict ordering,
+    // but every real commit directory sorts by its actual numeric ID.
+    // Directories outside SnapshotWriter's own "NNN" naming (a stray
+    // file, something a human created) have no parsed ID -- fall back
+    // to comparing those by path so the sort stays a strict ordering,
+    // but every real commit directory sorts by its actual numeric ID.
+    std::sort(dirs.begin(), dirs.end(), [](const auto& a, const auto& b) {
+        const auto idA = parseCommitId(a);
+        const auto idB = parseCommitId(b);
+        if (idA && idB) {
+            return *idA < *idB;
+        }
+        return a < b;
+    });
 
     for (const auto& dir : dirs) {
         if (auto m = readCommitMetadata(dir)) {

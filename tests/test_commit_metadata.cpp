@@ -296,4 +296,37 @@ TEST(ListCommits, ReturnsCommitsInNumericOrder) {
     std::filesystem::remove_all(root);
 }
 
+// SnapshotWriter::write() zero-pads a commit's numeric ID with
+// std::setw(3), which only sets a *minimum* width: once a long-running
+// session reaches a 4-digit ID, "1000" is 4 characters, not "1000"
+// padded any wider than that. ReturnsCommitsInNumericOrder above never
+// exercises this since every ID there is the same width -- plain
+// lexicographic path comparison happens to get same-width zero-padded
+// names right, which is exactly why this gap went unnoticed. "1000"
+// sorts *before* "999" as a string ('1' < '9'), even though 1000 > 999
+// as a commit number, so this pins down that mixed-width IDs still
+// come back in the right numeric order.
+TEST(ListCommits, ReturnsCommitsInNumericOrderAcrossDifferentIdWidths) {
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "palim_test_list_commits_mixed_width";
+    std::filesystem::remove_all(root);
+    for (const std::string& id : {"1001", "998", "1000", "999"}) {
+        std::filesystem::create_directories(root / id);
+        std::ofstream file(root / id / "metadata.json");
+        file << R"({"timestamp": ")" << id << R"(", "change_score": 0, "sharpness_score": 0,
+                "camera": {"width": 0, "height": 0, "exposure_auto": null, "exposure_absolute": null,
+                           "gain": null, "white_balance_auto": null, "white_balance_temperature": null},
+                "git": {"available": false}})";
+    }
+
+    auto commits = palim::listCommits(root);
+    ASSERT_EQ(commits.size(), 4u);
+    EXPECT_EQ(commits[0].id, "998");
+    EXPECT_EQ(commits[1].id, "999");
+    EXPECT_EQ(commits[2].id, "1000");
+    EXPECT_EQ(commits[3].id, "1001");
+
+    std::filesystem::remove_all(root);
+}
+
 }  // namespace

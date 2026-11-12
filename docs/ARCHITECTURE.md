@@ -1057,6 +1057,51 @@ positive-sharpness and the blur-lowers-sharpness tests failed exactly as
 expected, with nothing else affected. Restored, full suite (109 tests)
 green again.
 
+## Phase 21: `palim-timeline` listed commits out of order past #999
+
+`SnapshotWriter::write()` names each commit directory with
+`std::setw(3)` zero-padding ("001", "002", ...) — but `setw` only sets
+a *minimum* field width; it doesn't truncate or widen the padding once
+an ID genuinely needs more digits than that. "1000" is 4 characters,
+not "1000" re-padded to stay ahead of "999". `commit_metadata.cpp`'s
+`listCommits()` sorted those directory names with plain
+`std::sort(dirs.begin(), dirs.end())` — lexicographic path comparison
+— relying on a comment's own assumption ("zero-padded names ->
+lexicographic == numeric") that only holds while every ID shares the
+same width. Past 999 commits, it doesn't: `"1000" < "999"` as strings
+(`'1' < '9'`), the opposite of their actual numeric order.
+
+Concretely reachable, not a theoretical edge case: this is exactly the
+"left running unattended" scenario `--max-commits` (Phase 17) exists
+for. Without that flag set, commits accumulate without bound, and a
+long enough run crosses the 999 boundary — at which point every commit
+from #1000 onward would display *before* #998/#999 in
+`palim-timeline`'s listing, scrambling the very timeline this tool
+exists to produce.
+
+Confirmed before fixing it: built a synthetic `commits/` directory with
+`998`, `999`, `1000`, `1001` and called `listCommits()` directly — it
+returned `1000, 1001, 998, 999`, not `998, 999, 1000, 1001`.
+
+Added `parseCommitId()` (the same digit-only-name-to-int parsing
+`SnapshotWriter`'s own `listCommitDirs()` already does, for the same
+reason) and changed the sort to compare by parsed numeric ID when both
+sides have one, falling back to path comparison only for whatever
+doesn't parse (a stray non-numeric directory) so the sort stays a
+strict ordering either way. This is correct no matter how many digits
+a commit ID ever grows to, not just safe up to some larger but still
+eventually-reachable padding width.
+
+Verified: added `ReturnsCommitsInNumericOrderAcrossDifferentIdWidths`
+(the same 998/999/1000/1001 case). Temporarily reverted the sort to
+plain lexicographic path comparison — confirmed exactly this test
+failed, reproducing the predicted `1000, 1001, 998, 999` order, while
+the pre-existing same-width `ReturnsCommitsInNumericOrder` test (which
+never exercises the width mismatch) stayed green. Restored, full suite
+(111 tests) green again, and re-ran the real `palim-timeline` binary
+against the same synthetic 998/999/1000/1001 directory: output now
+lists `#998`, `#999`, `#1000`, `#1001` in that order.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)
