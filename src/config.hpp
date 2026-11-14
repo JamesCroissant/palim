@@ -12,6 +12,13 @@ namespace palim {
 // SnapshotWriter) already accepted these as constructor arguments --
 // main.cpp just never exposed a way to set them without recompiling.
 struct Config {
+    // Set when the command line contained --help/-h. parseArgs() checks
+    // for this before anything else, so it wins over an otherwise-
+    // invalid flag elsewhere in argv rather than first throwing on that
+    // -- the same priority --help gets in every other command-line
+    // tool. Every other field is left at its default when this is set;
+    // main.cpp checks this before acting on any of them.
+    bool helpRequested = false;
     std::string devicePath = "/dev/video0";
     int width = 1280;
     int height = 720;
@@ -43,7 +50,12 @@ struct Config {
 //
 // Supported flags: --device <path>, --width <px>, --height <px>,
 // --threshold <percent>, --stable-ms <ms>, --output-dir <path>,
-// --frame-history-capacity <frames>, --max-commits <count>.
+// --frame-history-capacity <frames>, --max-commits <count>, --help/-h.
+//
+// --help/-h anywhere in `args` short-circuits all of the above: returns
+// immediately with Config::helpRequested == true, without validating
+// (or even looking at) anything else in `args` and without ever
+// throwing, regardless of what else is present.
 Config parseArgs(const std::vector<std::string>& args);
 
 }  // namespace palim

@@ -69,6 +69,13 @@ const std::string& nextValue(const std::string& flag, const std::vector<std::str
 Config parseArgs(const std::vector<std::string>& args) {
     Config config;
 
+    for (const std::string& arg : args) {
+        if (arg == "--help" || arg == "-h") {
+            config.helpRequested = true;
+            return config;
+        }
+    }
+
     for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string& arg = args[i];
 

@@ -6,6 +6,7 @@ namespace {
 
 TEST(ParseArgs, DefaultsWhenNoArgsGiven) {
     const auto config = palim::parseArgs({});
+    EXPECT_FALSE(config.helpRequested);
     EXPECT_EQ(config.devicePath, "/dev/video0");
     EXPECT_EQ(config.width, 1280);
     EXPECT_EQ(config.height, 720);
@@ -84,6 +85,25 @@ TEST(ParseArgs, AllFlagsTogether) {
 
 TEST(ParseArgs, UnrecognizedFlagThrows) {
     EXPECT_THROW(palim::parseArgs({"--bogus"}), std::invalid_argument);
+}
+
+TEST(ParseArgs, LongHelpFlagSetsHelpRequested) {
+    EXPECT_TRUE(palim::parseArgs({"--help"}).helpRequested);
+}
+
+TEST(ParseArgs, ShortHelpFlagSetsHelpRequested) {
+    EXPECT_TRUE(palim::parseArgs({"-h"}).helpRequested);
+}
+
+// --help wins regardless of what else is on the command line -- an
+// otherwise-invalid flag before or after it must not throw instead of
+// recognizing help, the same way every other command-line tool lets
+// --help take priority over the rest of argv.
+TEST(ParseArgs, HelpFlagTakesPriorityOverAnInvalidFlag) {
+    EXPECT_TRUE(palim::parseArgs({"--bogus", "--help"}).helpRequested);
+    EXPECT_TRUE(palim::parseArgs({"--help", "--bogus"}).helpRequested);
+    EXPECT_THROW(palim::parseArgs({"--width"}), std::invalid_argument);  // sanity: normally throws
+    EXPECT_TRUE(palim::parseArgs({"--width", "--help"}).helpRequested);
 }
 
 TEST(ParseArgs, FlagMissingValueThrows) {

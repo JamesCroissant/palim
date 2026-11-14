@@ -197,6 +197,7 @@ All of that is configurable via flags instead of recompiling:
 | `--output-dir` | where `commits/NNN/` snapshots are written | `commits` |
 | `--frame-history-capacity` | recent frames `FrameHistory` keeps, to pick the sharpest "after" frame from | `90` (~3s at 30fps) |
 | `--max-commits` | cap on how many `commits/NNN/` directories ever exist at once -- past it, the oldest are deleted after each new write | unlimited |
+| `--help` / `-h` | print usage and exit `0` -- takes priority over every other flag, valid or not | — |
 
 `--width`/`--height`/`--frame-history-capacity`/`--max-commits` must be
 positive, `--stable-ms` must be >= 0, and `--threshold` must be a

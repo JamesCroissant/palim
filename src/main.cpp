@@ -43,16 +43,32 @@ constexpr int kMaxConsecutiveGrabFailures = 30;
 constexpr auto kGrabFailureRetryDelay = std::chrono::milliseconds(10);
 }  // namespace
 
+namespace {
+// Shared by the --help path and the argument-error path, so the two
+// can't end up listing a different set of flags from each other.
+void printUsage(std::ostream& out) {
+    out << "Usage: palim [--device PATH] [--width PX] [--height PX] "
+           "[--threshold PERCENT] [--stable-ms MS] [--output-dir DIR] "
+           "[--frame-history-capacity FRAMES] [--max-commits COUNT] [--help]\n";
+}
+}  // namespace
+
 int main(int argc, char** argv) {
     palim::Config config;
     try {
         config = palim::parseArgs(std::vector<std::string>(argv + 1, argv + argc));
     } catch (const std::invalid_argument& e) {
         std::cerr << "Argument error: " << e.what() << "\n";
-        std::cerr << "Usage: palim [--device PATH] [--width PX] [--height PX] "
-                     "[--threshold PERCENT] [--stable-ms MS] [--output-dir DIR] "
-                     "[--frame-history-capacity FRAMES] [--max-commits COUNT]\n";
+        printUsage(std::cerr);
         return 1;
+    }
+
+    if (config.helpRequested) {
+        // Requesting help is not an error -- stdout and exit 0, not
+        // stderr and exit 1, matching how every other command-line
+        // tool treats --help rather than looking like a failure.
+        printUsage(std::cout);
+        return 0;
     }
 
     // Before anything else starts: Ctrl-C/SIGTERM used to just kill the

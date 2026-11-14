@@ -1102,6 +1102,40 @@ never exercises the width mismatch) stayed green. Restored, full suite
 against the same synthetic 998/999/1000/1001 directory: output now
 lists `#998`, `#999`, `#1000`, `#1001` in that order.
 
+## Phase 22: `--help`/`-h` instead of an "unrecognized argument" error
+
+Found by checking `palim` against the exact gap `focus-monitor` (the
+project this account also maintains) had just been found to have:
+`parseArgs()` had no case for `--help`/`-h` at all, so it fell through
+to the catch-all `throw std::invalid_argument("unrecognized argument:
+--help")`, which `main()` reported as `Argument error: unrecognized
+argument: --help` on stderr with exit code `1` — the single most
+common thing a new user types, treated as a failure rather than the
+always-available, non-error request every other command-line tool
+treats it as.
+
+Added `Config::helpRequested` (default `false`) and a scan for
+`--help`/`-h` at the very start of `parseArgs()`, before any other
+argument is even looked at — set and return immediately when found,
+so `--help` wins regardless of what else is on the command line (an
+otherwise-invalid flag like a bare `--width` with no value no longer
+matters once `--help` is also present, in either order). `main()`
+checks `config.helpRequested` right after `parseArgs()` returns, ahead
+of its existing error-handling path, and prints the usage to stdout
+with exit `0` instead of stderr with exit `1`. The usage string itself
+moved into a small `printUsage()` so the error path and the help path
+can never list a different set of flags from each other.
+
+Verified: confirmed against the real binary first — `palim --help`,
+`palim -h`, and `palim --width --help` (an otherwise-incomplete flag
+alongside `--help`) all now print the usage and exit `0`, where the
+first two previously printed an argument error and exited `1`. Added
+`LongHelpFlagSetsHelpRequested`, `ShortHelpFlagSetsHelpRequested`, and
+`HelpFlagTakesPriorityOverAnInvalidFlag`. Temporarily made the scan
+recognize only `"--help"`, not `"-h"` — confirmed exactly
+`ShortHelpFlagSetsHelpRequested` failed (nothing else), restored it,
+confirmed the full suite (114 tests) passes again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)
