@@ -1136,6 +1136,55 @@ recognize only `"--help"`, not `"-h"` — confirmed exactly
 `ShortHelpFlagSetsHelpRequested` failed (nothing else), restored it,
 confirmed the full suite (114 tests) passes again.
 
+## Phase 23: a missing display crashed `palim` instead of exiting cleanly
+
+Found checking `palim` against the same class of gap `focus-monitor`
+(the project this account also maintains) had just turned up: its
+`main.cpp` calls `cv::namedWindow()`/`cv::imshow()` for its own live
+preview, and OpenCV's Qt/GTK highgui backend doesn't fail that call
+with a catchable C++ exception when no display is reachable. Confirmed
+directly (same OpenCV/Qt installation, same call): it aborts the whole
+process via Qt's `qFatal`, which calls `abort()` -- a signal, not a
+throw, so nothing in `main()` could ever have caught it.
+
+Worse here than a bare crash would be on its own: `main()` already
+does real cleanup work on shutdown (Phase 10's `ShutdownFlag`, joining
+the capture/processing/storage threads so a commit never gets caught
+mid-write) -- but `abort()` bypasses all of that, the same
+"half-written commit" failure mode Phase 10 exists to prevent, just
+reached through the one path (the main thread's own GUI loop) nothing
+had guarded against it. Concretely reachable, not theoretical: a
+systemd unit with no desktop session attached, or a plain SSH session
+without `-X`, with a real camera plugged in (so the existing
+`Camera::isOpened()` check doesn't stop it first) -- that combination
+starts the camera and all three worker threads, streams real frames,
+and only then crashes out from under them the instant the main thread
+reaches `cv::namedWindow()`.
+
+Added `src/display_availability.hpp`'s `displayAvailable()`, a pure
+function over `DISPLAY`/`WAYLAND_DISPLAY`'s values (not read
+internally, so the decision itself stays unit-testable without
+touching the real environment) -- the exact same fix, independently
+applied, as `focus-monitor`'s own `DisplayAvailable()`. `main()` checks
+it right after the `--help` path (which still works with no display,
+since it returns before this) and before `Camera` is ever constructed,
+printing a clear error and returning `1` instead of touching the
+camera or starting any thread.
+
+Added `tests/test_display_availability.cpp` (5 cases, including that
+an explicitly-empty `DISPLAY=""` counts as unset, same as the pointer
+being null). Verified against the real binary: with
+`DISPLAY`/`WAYLAND_DISPLAY` both unset, `palim` now prints the new
+error and exits `1` instead of reaching the camera at all; `--help`
+is unaffected (it returns before this check); setting `DISPLAY` falls
+through to the existing camera-open failure exactly as before (no real
+`/dev/video0` in this environment). Verified the new test actually
+exercises the OR logic: temporarily dropped the `WAYLAND_DISPLAY` half
+of the check, confirmed exactly `WaylandDisplayAloneIsAvailable` failed
+(nothing else, including `BothSetIsAvailable`, which still has
+`DISPLAY` set), restored it, confirmed the full suite (119 tests)
+passes again.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

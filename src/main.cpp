@@ -1,4 +1,5 @@
 #include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -14,6 +15,7 @@
 #include "change_detector.hpp"
 #include "config.hpp"
 #include "consecutive_failure_guard.hpp"
+#include "display_availability.hpp"
 #include "frame_history.hpp"
 #include "shutdown_flag.hpp"
 #include "snapshot_writer.hpp"
@@ -69,6 +71,21 @@ int main(int argc, char** argv) {
         // tool treats --help rather than looking like a failure.
         printUsage(std::cout);
         return 0;
+    }
+
+    // Checked before opening the camera at all: cv::namedWindow()
+    // (further down, in the main thread's own GUI loop) doesn't fail
+    // with a catchable C++ exception when no display is reachable --
+    // OpenCV's Qt/GTK backend aborts the whole process instead (see
+    // display_availability.hpp's own comment). Failing here means a
+    // headless run (systemd, SSH without `-X`) never opens the camera,
+    // starts the three worker threads, or streams a single frame, only
+    // to crash out from under them moments later with none of their own
+    // clean-shutdown handling able to run.
+    if (!palim::displayAvailable(std::getenv("DISPLAY"), std::getenv("WAYLAND_DISPLAY"))) {
+        std::cerr << "Error: no display available (DISPLAY and WAYLAND_DISPLAY are both unset). "
+                     "palim needs a GUI session to show its preview window.\n";
+        return 1;
     }
 
     // Before anything else starts: Ctrl-C/SIGTERM used to just kill the

@@ -156,7 +156,8 @@ numeric field left empty by a write torn mid-field, and `listCommits`
 ordering commits by their actual numeric ID rather than lexicographic
 directory-name order once IDs cross a digit-width boundary like
 999 → 1000),
-CLI argument parsing (`parseArgs`), `Camera`'s failure paths (no
+CLI argument parsing (`parseArgs`), `displayAvailable` (whether
+`DISPLAY`/`WAYLAND_DISPLAY` count as set), `Camera`'s failure paths (no
 device present, a non-V4L2 device), and `palim-timeline`'s own output
 formatting (`timeline_format`: hash truncation, the `?`-for-unsupported-
 control convention, and that a file going from dirty back to clean is
@@ -180,6 +181,12 @@ detected. If the camera is unplugged or its driver gets stuck, `palim`
 gives up and shuts down after enough consecutive failed frame grabs in
 a row (logging why), rather than spinning the capture thread at 100%
 CPU forever.
+
+A GUI session (`DISPLAY` or `WAYLAND_DISPLAY` set) is required to show
+that preview window -- `palim` checks for one before ever opening the
+camera and exits cleanly with an error if neither is set, rather than
+starting the camera and all three worker threads only to abort when
+`cv::namedWindow()` reaches for a display that isn't there.
 
 All of that is configurable via flags instead of recompiling:
 

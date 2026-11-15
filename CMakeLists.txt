@@ -54,6 +54,7 @@ if(PALIM_BUILD_TESTS)
         tests/test_shutdown_flag.cpp
         tests/test_snapshot_writer.cpp
         tests/test_consecutive_failure_guard.cpp
+        tests/test_display_availability.cpp
         tests/test_timeline_format.cpp
     )
     target_link_libraries(palim_tests PRIVATE palim_lib GTest::gtest GTest::gtest_main)
