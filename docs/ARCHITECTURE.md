@@ -1185,6 +1185,36 @@ of the check, confirmed exactly `WaylandDisplayAloneIsAvailable` failed
 `DISPLAY` set), restored it, confirmed the full suite (119 tests)
 passes again.
 
+## Phase 24: no CI at all
+
+Found stepping back from individual bugs to ask what, structurally,
+was still missing: `focus-monitor` (the project this account also
+maintains) has had a GitHub Actions workflow building and running its
+test suite on every push since early on. `palim` never did -- no
+`.github/workflows/` directory existed at all. Every one of the 23
+phases before this one landed with only this account's own local
+`ctest` run as evidence, never anything that would catch a regression
+introduced by a change this account *didn't* make, or verify that the
+repository still builds cleanly from a fresh checkout rather than
+whatever incrementally-updated `build/` directory happened to be
+lying around locally.
+
+Added `.github/workflows/build-and-test.yml`: on push or pull request,
+installs the exact dependency line from this README's own Building
+section (`libopencv-dev cmake build-essential linux-libc-dev
+libgtest-dev`), then configures, builds, and runs `ctest
+--output-on-failure` -- the same three commands this README already
+tells a human contributor to run, now run automatically instead of
+only on trust.
+
+Verified: ran the exact same sequence locally against a from-scratch
+checkout (`rm -rf build` first, so nothing from a prior local build
+could paper over a real configure/build failure) -- OpenCV, GTest,
+and V4L2 headers resolve correctly and the full suite (119 tests)
+passes clean, the same outcome CI itself will see on its own fresh
+runner (which, like this verification, has no camera -- exactly why
+`Camera::grab()` against real hardware stays out of scope for both).
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

@@ -166,6 +166,13 @@ design). `Camera::grab()` against real hardware isn't covered here —
 that needs an actual camera. Pass `-DPALIM_BUILD_TESTS=OFF` to `cmake`
 to skip building the test suite (and its GTest dependency) entirely.
 
+Runs automatically on every push and pull request via GitHub Actions
+(`.github/workflows/build-and-test.yml`): installs the same
+dependencies as the Building section above, then configures, builds,
+and runs the full `ctest` suite -- no camera is available on that
+runner, which is exactly why `Camera::grab()` itself stays out of
+scope for both this suite and CI alike.
+
 ## Running
 
 ```sh
