@@ -1215,6 +1215,56 @@ passes clean, the same outcome CI itself will see on its own fresh
 runner (which, like this verification, has no camera -- exactly why
 `Camera::grab()` against real hardware stays out of scope for both).
 
+## Phase 25: `main()` always returned `0`, even when the camera disconnected
+
+Found checking `palim` against its own README's framing of itself: a
+tool meant to be "left running unattended" (the exact phrase Phase 17's
+`--max-commits` exists to support), with a capture thread that already
+detects the camera disconnecting mid-session and shuts everything down
+cleanly for it. But `main()`'s own final `return 0;` ran no matter
+*why* the shutdown happened -- Esc, `Ctrl-C`/`kill`, or the camera
+falling off the bus all returned the identical exit code. A supervisor
+(a systemd unit with `Restart=on-failure`, a watch script) had no way
+to tell "the user stopped this on purpose" apart from "the camera
+disconnected, this is worth restarting for" from the exit code alone --
+exactly the distinction `focus-monitor`'s own
+`kCameraDisconnectedExitCode` already makes, just never applied here,
+even though palim's own multi-threaded capture loop already has a
+clearer "the camera is gone" signal than focus-monitor's single-
+threaded one does (`ConsecutiveFailureGuard::recordFailure()` returning
+`true`).
+
+Added a `kCameraDisconnectedExitCode` constant (`2`, matching
+`focus-monitor`'s own) and a `std::atomic<bool> cameraDisconnected`
+local to `main()`, captured by reference into the capture thread's
+lambda alongside everything else it already captures by reference.
+Set right next to the existing `ShutdownFlag::instance().request()`
+call in the "giving up" branch -- same condition, same place, just
+also recording *why* this time. `main()`'s final `return` now checks
+it after all three threads have joined (itself a happens-before edge,
+though the flag is still `std::atomic`, not a plain `bool`, for the
+same reason `ShutdownFlag` is: making the cross-thread intent
+unambiguous rather than relying on a guarantee that's easy to reason
+past later) and returns `kCameraDisconnectedExitCode` instead of `0`
+only when it fired.
+
+Verified: confirmed the two paths this change could have broken are
+unaffected -- `palim --help` still prints usage and exits `0`; a
+bare `palim` with no display still prints the existing error and
+exits `1` (both return before the camera is ever opened, let alone
+before the new flag is ever touched). Full suite (119 tests)
+unaffected, since this logic lives only in `main.cpp`, not
+`palim_lib`. The actual camera-disconnected path itself can't be
+exercised live in this headless container (no real camera to
+disconnect) -- the same category of thing already acknowledged
+elsewhere in this project as untestable here (`Camera::grab()`
+against real hardware); verified by careful code review instead:
+`ConsecutiveFailureGuard`'s own threshold logic and `ShutdownFlag`'s
+cross-thread signaling are both already unit-tested in isolation, and
+the new flag's capture-by-reference lifetime is sound because `main()`
+never returns until after `captureThread.join()`, well past every
+point the capture thread could still be writing to it.
+
 ## Explicitly deferred (not forgotten — see spec for full detail)
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)

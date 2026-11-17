@@ -195,6 +195,19 @@ camera and exits cleanly with an error if neither is set, rather than
 starting the camera and all three worker threads only to abort when
 `cv::namedWindow()` reaches for a display that isn't there.
 
+### Exit codes
+
+- `0`: a normal exit -- Esc, `Ctrl-C`/`kill`, `--help`, or an argument
+  error all intentional, nothing worth automatically retrying.
+- `1`: a startup error (bad arguments, no display available, the
+  camera failing to open).
+- `2`: the camera disconnected mid-session (gave up after enough
+  consecutive failed frame grabs in a row). Kept distinct from `0`/`1`
+  so a supervisor -- a systemd unit with
+  `Restart=on-failure`+`SuccessExitStatus=1`, a watch script -- can
+  tell "the user stopped it on purpose" apart from "the camera fell
+  off the bus, this is worth restarting for" from the exit code alone.
+
 All of that is configurable via flags instead of recompiling:
 
 ```sh

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -43,6 +44,18 @@ constexpr std::size_t kCommitQueueCapacity = 64;
 // camera.
 constexpr int kMaxConsecutiveGrabFailures = 30;
 constexpr auto kGrabFailureRetryDelay = std::chrono::milliseconds(10);
+
+// Distinguishes "the camera actually failed mid-session" from every
+// other way main() exits with the loop having run at all (Esc,
+// SIGINT/SIGTERM) -- those are all equally intentional shutdowns and
+// keep returning 0, same as before this existed. Without this, a
+// supervisor (a systemd unit with Restart=on-failure+SuccessExitStatus,
+// a watch script) has no way to tell "the user stopped it on purpose"
+// apart from "the camera fell off the bus, this is worth restarting
+// for" from the exit code alone -- the exact distinction
+// focus-monitor's own kCameraDisconnectedExitCode already makes, just
+// never applied here too.
+constexpr int kCameraDisconnectedExitCode = 2;
 }  // namespace
 
 namespace {
@@ -116,6 +129,14 @@ int main(int argc, char** argv) {
     std::mutex displayMutex;
     cv::Mat displayFrame;
 
+    // Set by the capture thread right before it requests shutdown over
+    // a disconnected camera, read by main() only after every thread has
+    // joined -- that join is itself a happens-before edge, but this is
+    // still std::atomic (not a plain bool) for the same reason
+    // ShutdownFlag is: making the cross-thread intent unambiguous rather
+    // than relying on a guarantee that's easy to reason past later.
+    std::atomic<bool> cameraDisconnected{false};
+
     // --- Capture thread: the only thread that touches `camera`.
     // "camera = std::move(camera)" move-captures the outer `camera` into
     // a same-named variable local to the lambda; `mutable` is needed
@@ -129,6 +150,7 @@ int main(int argc, char** argv) {
                 if (grabFailureGuard.recordFailure()) {
                     std::cerr << "Camera: " << kMaxConsecutiveGrabFailures
                               << " consecutive failed grabs -- giving up\n";
+                    cameraDisconnected.store(true, std::memory_order_relaxed);
                     palim::ShutdownFlag::instance().request();
                     break;
                 }
@@ -232,5 +254,5 @@ int main(int argc, char** argv) {
     captureThread.join();
     processingThread.join();
     storageThread.join();
-    return 0;
+    return cameraDisconnected.load(std::memory_order_relaxed) ? kCameraDisconnectedExitCode : 0;
 }
