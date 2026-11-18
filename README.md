@@ -224,18 +224,25 @@ All of that is configurable via flags instead of recompiling:
 | `--output-dir` | where `commits/NNN/` snapshots are written | `commits` |
 | `--frame-history-capacity` | recent frames `FrameHistory` keeps, to pick the sharpest "after" frame from | `90` (~3s at 30fps) |
 | `--max-commits` | cap on how many `commits/NNN/` directories ever exist at once -- past it, the oldest are deleted after each new write | unlimited |
+| `--pixel-diff-threshold` | minimum per-pixel intensity difference (after blurring) to count as "changed" -- not `--threshold` above, which is the *fraction* of pixels that then has to cross before the desk counts as "changing" | `25` |
+| `--blur-kernel-size` | Gaussian blur kernel size applied before that pixel comparison, to filter sensor noise and small lighting flicker | `21` |
 | `--help` / `-h` | print usage and exit `0` -- takes priority over every other flag, valid or not | — |
 
 `--width`/`--height`/`--frame-history-capacity`/`--max-commits` must be
-positive, `--stable-ms` must be >= 0, and `--threshold` must be a
-finite number >= 0 -- each is rejected at parse time rather than
-silently accepted (a negative width/height would otherwise become a
-huge unsigned value in the V4L2 format request, a non-positive
-frame-history capacity would divide by zero on the very first frame
-pushed into it, a negative stable duration would commit on essentially
-the next tick instead of waiting for real stability, and
-`nan`/`inf`/negative parse cleanly as doubles but mean nothing as a
-threshold).
+positive, `--stable-ms` must be >= 0, `--threshold` must be a finite
+number >= 0, `--pixel-diff-threshold` must be between 0 and 254, and
+`--blur-kernel-size` must be a positive odd number -- each is rejected
+at parse time rather than silently accepted (a negative width/height
+would otherwise become a huge unsigned value in the V4L2 format
+request, a non-positive frame-history capacity would divide by zero on
+the very first frame pushed into it, a negative stable duration would
+commit on essentially the next tick instead of waiting for real
+stability, `nan`/`inf`/negative parse cleanly as doubles but mean
+nothing as a threshold, 255 or above could never be exceeded by an
+8-bit pixel difference and would silently disable change detection
+instead of failing loudly, and an even or non-positive blur kernel size
+would otherwise crash with an uncaught OpenCV assertion the first time
+a frame is processed instead of being rejected up front).
 
 Left running unattended, `commits/` only ever grows -- two JPEGs (three
 with a localized region, see `--threshold` above) per commit, with no
@@ -283,6 +290,7 @@ Sections referenced below are from the original project spec; see
 - [x] Restarting `palim` against an existing `commits/` directory resumes numbering instead of overwriting earlier commits (Phase 11)
 - [x] The capture thread gives up cleanly (instead of busy-spinning forever) after enough consecutive failed frame grabs in a row — a disconnected camera or a stuck driver (Phase 12)
 - [x] `--max-commits` bounds disk usage for an unattended, long-running `palim` by pruning the oldest commits once the cap is exceeded (Phase 17)
+- [x] `--pixel-diff-threshold`/`--blur-kernel-size` expose `ChangeDetector`'s own sensitivity and noise-filtering knobs, each validated at parse time (Phase 26)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 

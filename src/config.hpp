@@ -38,6 +38,17 @@ struct Config {
     // once -- see its own comment for why. 0 (the default) means
     // unlimited, matching this project's behavior before this existed.
     int maxCommits = 0;
+    // ChangeDetector's own two constructor arguments -- minimum per-pixel
+    // intensity difference (0-255) to count as "changed" after blurring,
+    // and the Gaussian blur kernel size that filters sensor noise before
+    // that comparison. Both were already constructor arguments on
+    // ChangeDetector itself, same as every other field above was already
+    // a constructor argument on *its* class before main.cpp exposed it --
+    // just never carried through to Config, so a camera with more sensor
+    // noise or a dimmer room had no way to retune either one without
+    // recompiling.
+    int pixelDiffThreshold = 25;
+    int blurKernelSize = 21;
 };
 
 // Parses palim's CLI flags into a Config, starting from the defaults
@@ -45,12 +56,16 @@ struct Config {
 // on an unrecognized flag, a missing value, a value that fails to parse
 // as the expected type, or one that parses but is out of range
 // (--width/--height/--frame-history-capacity/--max-commits <= 0,
-// --stable-ms < 0, --threshold non-finite or negative -- see
-// config.cpp's parseIntAtLeast/parseNonNegativeFiniteDouble).
+// --stable-ms < 0, --threshold non-finite or negative,
+// --pixel-diff-threshold outside 0-254, --blur-kernel-size not a
+// positive odd integer -- see config.cpp's
+// parseIntAtLeast/parseNonNegativeFiniteDouble/parseIntInRange/
+// parsePositiveOddInt).
 //
 // Supported flags: --device <path>, --width <px>, --height <px>,
 // --threshold <percent>, --stable-ms <ms>, --output-dir <path>,
-// --frame-history-capacity <frames>, --max-commits <count>, --help/-h.
+// --frame-history-capacity <frames>, --max-commits <count>,
+// --pixel-diff-threshold <0-254>, --blur-kernel-size <odd px>, --help/-h.
 //
 // --help/-h anywhere in `args` short-circuits all of the above: returns
 // immediately with Config::helpRequested == true, without validating

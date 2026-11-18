@@ -32,6 +32,34 @@ int parseIntAtLeast(const std::string& flag, const std::string& value, int min) 
     return parsed;
 }
 
+// Like parseInt, but rejects anything outside [min, max] -- used for
+// --pixel-diff-threshold, where both ends matter: negative is nonsense
+// for an absolute pixel-intensity difference, and 255 or above could
+// never be exceeded by an 8-bit diff (cv::threshold's src > thresh would
+// never hold), silently disabling change detection instead of failing
+// loudly.
+int parseIntInRange(const std::string& flag, const std::string& value, int min, int max) {
+    const int parsed = parseInt(flag, value);
+    if (parsed < min || parsed > max) {
+        throw std::invalid_argument(flag + " must be between " + std::to_string(min) + " and " +
+                                     std::to_string(max) + ", got '" + value + "'");
+    }
+    return parsed;
+}
+
+// cv::GaussianBlur requires its kernel size to be a positive odd integer
+// (or exactly 0, meaning "derive it from sigma" -- not an option here,
+// since ChangeDetector always passes sigma 0 too). Rejected here rather
+// than left to surface as an uncaught cv::Exception assertion failure
+// out of ChangeDetector::preprocess the first time a frame is processed.
+int parsePositiveOddInt(const std::string& flag, const std::string& value) {
+    const int parsed = parseIntAtLeast(flag, value, 1);
+    if (parsed % 2 == 0) {
+        throw std::invalid_argument(flag + " must be odd, got '" + value + "'");
+    }
+    return parsed;
+}
+
 double parseDouble(const std::string& flag, const std::string& value) {
     try {
         std::size_t consumed = 0;
@@ -96,6 +124,10 @@ Config parseArgs(const std::vector<std::string>& args) {
             config.frameHistoryCapacity = parseIntAtLeast(arg, nextValue(arg, args, i), 1);
         } else if (arg == "--max-commits") {
             config.maxCommits = parseIntAtLeast(arg, nextValue(arg, args, i), 1);
+        } else if (arg == "--pixel-diff-threshold") {
+            config.pixelDiffThreshold = parseIntInRange(arg, nextValue(arg, args, i), 0, 254);
+        } else if (arg == "--blur-kernel-size") {
+            config.blurKernelSize = parsePositiveOddInt(arg, nextValue(arg, args, i));
         } else {
             throw std::invalid_argument("unrecognized argument: " + arg);
         }

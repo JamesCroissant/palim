@@ -15,6 +15,8 @@ TEST(ParseArgs, DefaultsWhenNoArgsGiven) {
     EXPECT_EQ(config.outputDir, "commits");
     EXPECT_EQ(config.frameHistoryCapacity, 90);
     EXPECT_EQ(config.maxCommits, 0);
+    EXPECT_EQ(config.pixelDiffThreshold, 25);
+    EXPECT_EQ(config.blurKernelSize, 21);
 }
 
 TEST(ParseArgs, OverridesFrameHistoryCapacity) {
@@ -70,9 +72,10 @@ TEST(ParseArgs, OverridesOutputDir) {
 }
 
 TEST(ParseArgs, AllFlagsTogether) {
-    const auto config = palim::parseArgs({"--device", "/dev/video3", "--width", "320", "--height", "240",
-                                           "--threshold", "8", "--stable-ms", "1500", "--output-dir", "out",
-                                           "--frame-history-capacity", "45", "--max-commits", "200"});
+    const auto config =
+        palim::parseArgs({"--device", "/dev/video3", "--width", "320", "--height", "240", "--threshold", "8",
+                           "--stable-ms", "1500", "--output-dir", "out", "--frame-history-capacity", "45",
+                           "--max-commits", "200", "--pixel-diff-threshold", "40", "--blur-kernel-size", "15"});
     EXPECT_EQ(config.devicePath, "/dev/video3");
     EXPECT_EQ(config.width, 320);
     EXPECT_EQ(config.height, 240);
@@ -81,6 +84,42 @@ TEST(ParseArgs, AllFlagsTogether) {
     EXPECT_EQ(config.outputDir, "out");
     EXPECT_EQ(config.frameHistoryCapacity, 45);
     EXPECT_EQ(config.maxCommits, 200);
+    EXPECT_EQ(config.pixelDiffThreshold, 40);
+    EXPECT_EQ(config.blurKernelSize, 15);
+}
+
+TEST(ParseArgs, OverridesPixelDiffThreshold) {
+    const auto config = palim::parseArgs({"--pixel-diff-threshold", "40"});
+    EXPECT_EQ(config.pixelDiffThreshold, 40);
+}
+
+TEST(ParseArgs, ZeroPixelDiffThresholdIsAccepted) {
+    const auto config = palim::parseArgs({"--pixel-diff-threshold", "0"});
+    EXPECT_EQ(config.pixelDiffThreshold, 0);
+}
+
+// Negative is nonsense for an absolute pixel-intensity difference; 255 or
+// above could never be exceeded by an 8-bit absdiff (cv::threshold's
+// src > thresh would never hold), which would silently disable change
+// detection entirely rather than failing loudly here.
+TEST(ParseArgs, PixelDiffThresholdOutOfRangeThrows) {
+    EXPECT_THROW(palim::parseArgs({"--pixel-diff-threshold", "-1"}), std::invalid_argument);
+    EXPECT_THROW(palim::parseArgs({"--pixel-diff-threshold", "255"}), std::invalid_argument);
+}
+
+TEST(ParseArgs, OverridesBlurKernelSize) {
+    const auto config = palim::parseArgs({"--blur-kernel-size", "9"});
+    EXPECT_EQ(config.blurKernelSize, 9);
+}
+
+// cv::GaussianBlur requires a positive, odd kernel size -- anything else
+// would surface as an uncaught cv::Exception assertion failure out of
+// ChangeDetector::preprocess the first time a frame is processed, instead
+// of a clear error at the CLI boundary.
+TEST(ParseArgs, NonPositiveOrEvenBlurKernelSizeThrows) {
+    EXPECT_THROW(palim::parseArgs({"--blur-kernel-size", "0"}), std::invalid_argument);
+    EXPECT_THROW(palim::parseArgs({"--blur-kernel-size", "-3"}), std::invalid_argument);
+    EXPECT_THROW(palim::parseArgs({"--blur-kernel-size", "10"}), std::invalid_argument);
 }
 
 TEST(ParseArgs, UnrecognizedFlagThrows) {

@@ -64,7 +64,8 @@ namespace {
 void printUsage(std::ostream& out) {
     out << "Usage: palim [--device PATH] [--width PX] [--height PX] "
            "[--threshold PERCENT] [--stable-ms MS] [--output-dir DIR] "
-           "[--frame-history-capacity FRAMES] [--max-commits COUNT] [--help]\n";
+           "[--frame-history-capacity FRAMES] [--max-commits COUNT] "
+           "[--pixel-diff-threshold 0-254] [--blur-kernel-size ODD_PX] [--help]\n";
 }
 }  // namespace
 
@@ -175,7 +176,7 @@ int main(int argc, char** argv) {
     // --- Processing thread: everything stateful about "has the desk
     // changed" lives here, and only here.
     std::thread processingThread([&] {
-        palim::ChangeDetector detector;
+        palim::ChangeDetector detector(config.pixelDiffThreshold, config.blurKernelSize);
         palim::StateMachine stateMachine(config.changeThresholdPercent, config.stableDuration);
         palim::FrameHistory frameHistory(static_cast<std::size_t>(config.frameHistoryCapacity));
         std::optional<cv::Mat> prevFrame;

@@ -1269,3 +1269,53 @@ point the capture thread could still be writing to it.
 
 - Physical-side "what" something changed, beyond *where* it changed (object recognition/classification — see Phase 8 above for the "where" step already done) (spec section 4)
 - "Possible cause" debugging suggestions (spec section 4)
+
+## Phase 26: `ChangeDetector`'s own two knobs were never exposed as flags
+
+Found rereading `Config`'s own doc comment fresh: "every field here was
+previously a hardcoded constant or literal in `main.cpp`, even though
+the classes that consume them (`Camera`, `StateMachine`,
+`SnapshotWriter`) already accepted these as constructor arguments --
+`main.cpp` just never exposed a way to set them without recompiling."
+That comment's own list left out a fourth class matching exactly the
+same description: `ChangeDetector`'s constructor has taken
+`pixelDiffThreshold` (minimum per-pixel intensity difference to count
+as "changed") and `blurKernelSize` (the Gaussian blur applied before
+that comparison, to filter sensor noise) since Phase 1 -- but
+`main.cpp`'s processing thread has always constructed it with
+`palim::ChangeDetector detector;`, bare defaults, no way to retune
+either one for a noisier camera or a dimmer room without recompiling.
+Every other per-frame tuning knob this project has (`--threshold`,
+`--stable-ms`, resolution) already went through exactly this
+Config-and-flag treatment; these two never did.
+
+Added `Config::pixelDiffThreshold` (default `25`) and
+`Config::blurKernelSize` (default `21`), plus `--pixel-diff-threshold`
+and `--blur-kernel-size` flags parsed the same way every other numeric
+flag already is. `--pixel-diff-threshold` is validated to `[0, 254]`,
+not just non-negative: an 8-bit `absdiff` can never exceed `255`, so a
+threshold of `255` or above would make `cv::threshold`'s `src > thresh`
+never hold, silently disabling change detection instead of failing
+loudly at the CLI boundary the way an out-of-range value for every
+other flag already does. `--blur-kernel-size` is validated to be a
+positive odd integer -- `cv::GaussianBlur` requires exactly that (or a
+kernel size of `0`, not applicable here since `ChangeDetector` always
+passes sigma `0` too), so anything else would otherwise surface as an
+uncaught `cv::Exception` assertion failure out of
+`ChangeDetector::preprocess` the first time a frame is processed,
+rather than a clear error before the camera is ever opened. The
+processing thread now constructs `ChangeDetector` from both config
+values instead of the bare default constructor.
+
+Verified against the real binary: `palim --help` lists both new flags;
+`palim --pixel-diff-threshold 255` and `palim --blur-kernel-size 10`
+both print a clear argument error and exit `1`, instead of either
+silently doing nothing (the first case) or crashing well past argument
+parsing (the second, had it not been validated at all). Added
+`OverridesPixelDiffThreshold`, `ZeroPixelDiffThresholdIsAccepted`,
+`PixelDiffThresholdOutOfRangeThrows`, `OverridesBlurKernelSize`, and
+`NonPositiveOrEvenBlurKernelSizeThrows`. Verified the odd-kernel-size
+check is actually load-bearing, not just plausible-looking: temporarily
+replaced it with `if (false)`, confirmed exactly
+`NonPositiveOrEvenBlurKernelSizeThrows` failed (nothing else), restored
+it, confirmed the full suite (124 tests) passes again.
