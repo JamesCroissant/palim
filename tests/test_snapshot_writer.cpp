@@ -28,11 +28,39 @@ protected:
 
 TEST_F(SnapshotWriterTest, FirstCommitInAFreshDirectoryIsNumbered001) {
     palim::SnapshotWriter writer(dir);
-    writer.write(makeCommitEvent());
+    EXPECT_TRUE(writer.write(makeCommitEvent()));
 
     EXPECT_TRUE(std::filesystem::exists(dir / "001" / "before.jpg"));
     EXPECT_TRUE(std::filesystem::exists(dir / "001" / "after.jpg"));
     EXPECT_TRUE(std::filesystem::exists(dir / "001" / "metadata.json"));
+}
+
+// The bug this test guards against: write() used to be void, so a
+// commit that failed to save -- a full disk, a permissions problem, a
+// stray file occupying the exact "NNN" path a future commit ID needs --
+// had no way to tell main.cpp's storage thread anything went wrong. It
+// printed "COMMIT saved" regardless, and in the case reproduced here
+// (create_directories throwing std::filesystem::filesystem_error because
+// a regular file already sits at the path write() needs to turn into a
+// directory) it didn't just lie about success -- it threw straight out
+// of write(), which would have crashed the whole storage thread (and,
+// with it, the still-running capture/processing threads' work) over one
+// bad commit.
+TEST_F(SnapshotWriterTest, WriteReturnsFalseInsteadOfCrashingWhenTheCommitDirectoryCannotBeCreated) {
+    palim::SnapshotWriter writer(dir);
+    // "001" is the ID the first write() call will try to use -- block it
+    // with a regular file instead of letting it become a directory.
+    std::ofstream(dir / "001") << "a stray file, not a directory";
+
+    EXPECT_FALSE(writer.write(makeCommitEvent()));
+    // Nothing crashed (we got here), and no half-written artifacts ended
+    // up anywhere claiming to be commit 001.
+    EXPECT_FALSE(std::filesystem::exists(dir / "001" / "before.jpg"));
+
+    // The writer must still be usable afterwards -- one bad commit
+    // doesn't wedge every future one.
+    EXPECT_TRUE(writer.write(makeCommitEvent()));
+    EXPECT_TRUE(std::filesystem::exists(dir / "002" / "before.jpg"));
 }
 
 TEST_F(SnapshotWriterTest, SuccessiveCommitsInOneRunIncrementSequentially) {

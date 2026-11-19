@@ -5,6 +5,7 @@
 #include <ctime>
 #include <fstream>
 #include <iomanip>
+#include <iostream>
 #include <sstream>
 #include <utility>
 
@@ -95,27 +96,63 @@ std::string SnapshotWriter::formatTimestamp(std::chrono::system_clock::time_poin
     return oss.str();
 }
 
-void SnapshotWriter::write(const CommitEvent& event) {
+bool SnapshotWriter::write(const CommitEvent& event) {
     std::ostringstream id;
     id << std::setw(3) << std::setfill('0') << nextId_;
 
     const std::filesystem::path dir = outputDir_ / id.str();
-    std::filesystem::create_directories(dir);
 
-    cv::imwrite((dir / "before.jpg").string(), event.before);
-    cv::imwrite((dir / "after.jpg").string(), event.after);
+    // Everything below -- create_directories, cv::imwrite, the metadata
+    // ofstream -- can fail. create_directories throws std::filesystem::
+    // filesystem_error rather than returning false when "dir" can't
+    // actually become a directory (e.g. a stray file already sitting at
+    // that exact "NNN" path); cv::imwrite instead fails silently (returns
+    // false, no throw) for the more common disk-full/permission/missing-
+    // directory cases. Catching both here, in one place, is what makes
+    // the rest of this function's per-call bool checks below actually
+    // meaningful -- without this, a thrown filesystem_error would
+    // propagate straight out of write() and crash the whole storage
+    // thread (and, with it, the still-running capture/processing threads'
+    // work) over what should only ever cost this one commit.
+    try {
+        std::filesystem::create_directories(dir);
 
-    // A visible answer to "where did it change?" alongside the metadata
-    // one: a copy of `after` with the changed region boxed, rather than
-    // drawing on `after.jpg` itself -- computeSharpness() below and any
-    // future consumer of the raw frame should still see exactly what the
-    // camera captured, not an annotated version of it.
-    if (event.changedRegion) {
-        cv::Mat annotated = event.after.clone();
-        cv::rectangle(annotated, *event.changedRegion, cv::Scalar(0, 0, 255), 2);
-        cv::imwrite((dir / "after_annotated.jpg").string(), annotated);
+        bool ok = true;
+        ok &= cv::imwrite((dir / "before.jpg").string(), event.before);
+        ok &= cv::imwrite((dir / "after.jpg").string(), event.after);
+
+        // A visible answer to "where did it change?" alongside the
+        // metadata one: a copy of `after` with the changed region boxed,
+        // rather than drawing on `after.jpg` itself -- computeSharpness()
+        // below and any future consumer of the raw frame should still see
+        // exactly what the camera captured, not an annotated version of
+        // it.
+        if (event.changedRegion) {
+            cv::Mat annotated = event.after.clone();
+            cv::rectangle(annotated, *event.changedRegion, cv::Scalar(0, 0, 255), 2);
+            ok &= cv::imwrite((dir / "after_annotated.jpg").string(), annotated);
+        }
+
+        ok &= writeMetadata(dir, event);
+
+        if (!ok) {
+            std::cerr << "[palim] Warning: failed to fully write commit " << id.str() << " to "
+                      << dir.string() << "\n";
+        }
+
+        ++nextId_;
+        pruneOldCommits();
+        return ok;
+    } catch (const std::exception& e) {
+        std::cerr << "[palim] Warning: failed to write commit " << id.str() << " to " << dir.string()
+                   << ": " << e.what() << "\n";
+        ++nextId_;
+        pruneOldCommits();
+        return false;
     }
+}
 
+bool SnapshotWriter::writeMetadata(const std::filesystem::path& dir, const CommitEvent& event) {
     const std::string timestamp = formatTimestamp(std::chrono::system_clock::now());
     const double sharpness = computeSharpness(event.after);
     const GitInfo git = captureGitInfo();
@@ -166,8 +203,7 @@ void SnapshotWriter::write(const CommitEvent& event) {
     meta << "  }\n"
          << "}\n";
 
-    ++nextId_;
-    pruneOldCommits();
+    return static_cast<bool>(meta);
 }
 
 // Deletes the oldest (lowest-numbered) commit directories until at most

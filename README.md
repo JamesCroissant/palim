@@ -291,6 +291,7 @@ Sections referenced below are from the original project spec; see
 - [x] The capture thread gives up cleanly (instead of busy-spinning forever) after enough consecutive failed frame grabs in a row — a disconnected camera or a stuck driver (Phase 12)
 - [x] `--max-commits` bounds disk usage for an unattended, long-running `palim` by pruning the oldest commits once the cap is exceeded (Phase 17)
 - [x] `--pixel-diff-threshold`/`--blur-kernel-size` expose `ChangeDetector`'s own sensitivity and noise-filtering knobs, each validated at parse time (Phase 26)
+- [x] A commit that fails to write (disk full, permissions, a blocked path) is reported instead of silently claiming success, and can no longer crash the whole capture/processing/storage pipeline (Phase 27)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 

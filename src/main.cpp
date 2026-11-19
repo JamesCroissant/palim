@@ -223,8 +223,15 @@ int main(int argc, char** argv) {
             if (!commit) {
                 break;  // processing thread shut the queue down
             }
-            snapshotWriter.write(*commit);
-            std::cout << "COMMIT saved\n";
+            if (snapshotWriter.write(*commit)) {
+                std::cout << "COMMIT saved\n";
+            }
+            // write() already warns on stderr itself (with the specific
+            // commit directory and reason) when it fails, so there's
+            // nothing more to do here than skip the success message --
+            // the storage thread keeps running either way, the same
+            // best-effort spirit as every other best-effort failure path
+            // in this project (Camera::getControl, GitInfo).
         }
     });
 

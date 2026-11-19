@@ -1319,3 +1319,71 @@ check is actually load-bearing, not just plausible-looking: temporarily
 replaced it with `if (false)`, confirmed exactly
 `NonPositiveOrEvenBlurKernelSizeThrows` failed (nothing else), restored
 it, confirmed the full suite (124 tests) passes again.
+
+## Phase 27: a commit that failed to write still reported `COMMIT saved`
+
+Found reading `SnapshotWriter::write()` fresh: it returned `void`, and
+every `cv::imwrite()`/`std::ofstream` call inside it went unchecked.
+`cv::imwrite()` doesn't throw on an ordinary I/O failure (a full disk,
+a permissions problem, a missing directory) -- it returns `false`
+silently, the same shape of thing `AppendSessionSummary` in this
+account's other project (`focus-monitor`) already exists to handle for
+its own file write. Here, nothing checked that return value at all, so
+a failed write and a successful one looked identical to every caller:
+`main.cpp`'s storage thread printed `COMMIT saved` either way, `nextId_`
+still advanced, and `pruneOldCommits()` still ran -- a commit could
+silently vanish (no images, no metadata, on disk) while the terminal
+output claimed otherwise, with no way for anyone watching the log to
+tell. Concretely reachable the way this project is actually meant to
+run (`README.md`'s own framing: "a tool that watches a desk ... left
+running unattended"): the one scenario a long-running, unattended
+capture tool is most exposed to over days or weeks is exactly "ran out
+of disk" or "permissions changed under it."
+
+Worse, `std::filesystem::create_directories()` -- called unconditionally
+at the top of `write()`, before any `cv::imwrite()` -- doesn't share
+that silent-`false` behavior: reproduced directly that it instead
+*throws* `std::filesystem::filesystem_error` when the path it needs to
+become a directory already exists as something else, e.g. a stray
+regular file sitting at the exact `commits/NNN` path a future commit ID
+needs. That exception had nothing catching it anywhere between
+`write()` and the storage thread's own lambda in `main.cpp`, so it
+would have propagated out and terminated the whole process mid-session
+-- taking the still-running capture and processing threads' own
+in-flight work down with it, over what should only ever have cost this
+one commit.
+
+Changed `SnapshotWriter::write()` to return `bool`: `true` only if
+`before.jpg`, `after.jpg`, `after_annotated.jpg` (when a changed region
+exists), and `metadata.json` all wrote successfully. Wrapped the whole
+body in `try`/`catch (const std::exception&)` so a thrown
+`filesystem_error` (or any other exception from this path) is caught,
+reported once on `stderr` with the specific commit directory and
+reason, and turned into a `false` return instead of crashing -- the
+same best-effort philosophy this project already applies to
+`Camera::getControl()` and `GitInfo`'s own git-subprocess failures,
+just not yet applied to the one place actually writing the commit a
+whole session exists to produce. Pulled the metadata-writing code out
+into a new private `writeMetadata()` so its own `ofstream` could be
+checked (`static_cast<bool>(meta)`) and folded into the same overall
+`ok` the two `cv::imwrite()` calls already feed. `main.cpp`'s storage
+thread now only prints `COMMIT saved` when `write()` returns `true`;
+`write()` itself already warns on `stderr` with the specifics, so
+there's nothing more for the caller to add on failure, and the storage
+thread keeps running either way -- one bad commit no longer threatens
+any of the others.
+
+Added `WriteReturnsFalseInsteadOfCrashingWhenTheCommitDirectoryCannotBeCreated`:
+blocks the next commit ID with a regular file (reproducing the
+`create_directories` throw case directly, the same way the real bug was
+first confirmed with a standalone repro program) and checks `write()`
+returns `false` rather than crashing, that no half-written artifacts
+land anywhere claiming to be that commit, and that the writer is still
+usable for the next commit afterward. Verified this is genuinely
+load-bearing: temporarily reverted the `try`/`catch` back to the
+original unguarded code (keeping the `bool` return for compile parity)
+and confirmed the test failed with an uncaught `filesystem_error`
+propagating out of the test body -- exactly the crash this change
+exists to prevent -- while every other `SnapshotWriterTest` case stayed
+green. Restored the real fix, rebuilt, and confirmed the full suite
+(125 tests) passes again.
