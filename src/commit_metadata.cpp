@@ -249,10 +249,6 @@ std::vector<CommitMetadata> listCommits(const std::filesystem::path& commitsDir)
     // file, something a human created) have no parsed ID -- fall back
     // to comparing those by path so the sort stays a strict ordering,
     // but every real commit directory sorts by its actual numeric ID.
-    // Directories outside SnapshotWriter's own "NNN" naming (a stray
-    // file, something a human created) have no parsed ID -- fall back
-    // to comparing those by path so the sort stays a strict ordering,
-    // but every real commit directory sorts by its actual numeric ID.
     std::sort(dirs.begin(), dirs.end(), [](const auto& a, const auto& b) {
         const auto idA = parseCommitId(a);
         const auto idB = parseCommitId(b);
