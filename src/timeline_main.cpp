@@ -1,10 +1,30 @@
 #include <iostream>
+#include <vector>
 
 #include "commit_metadata.hpp"
 #include "timeline_format.hpp"
 
+namespace {
+// Shared with any future error path, so usage text can't drift from
+// what --help itself prints -- the same reasoning palim's own
+// printUsage (main.cpp) already follows.
+void printUsage(std::ostream& out) {
+    out << "Usage: palim-timeline [commits_dir] [--help]\n";
+}
+}  // namespace
+
 int main(int argc, char** argv) {
-    const std::filesystem::path commitsDir = (argc > 1) ? argv[1] : "commits";
+    const palim::TimelineArgs args =
+        palim::parseTimelineArgs(std::vector<std::string>(argv + 1, argv + argc));
+    if (args.helpRequested) {
+        // Requesting help is not an error -- stdout and exit 0, matching
+        // how every other command-line tool (and palim's own --help)
+        // treats it rather than looking like a failure.
+        printUsage(std::cout);
+        return 0;
+    }
+
+    const std::filesystem::path& commitsDir = args.commitsDir;
     const auto commits = palim::listCommits(commitsDir);
 
     if (commits.empty()) {

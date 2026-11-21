@@ -7,6 +7,42 @@ namespace {
 using palim::ChangedRegion;
 using palim::CommitMetadata;
 
+TEST(ParseTimelineArgs, DefaultsToCommitsDirWithNoArguments) {
+    const auto args = palim::parseTimelineArgs({});
+    EXPECT_FALSE(args.helpRequested);
+    EXPECT_EQ(args.commitsDir, "commits");
+}
+
+TEST(ParseTimelineArgs, PositionalArgumentOverridesTheCommitsDir) {
+    const auto args = palim::parseTimelineArgs({"/tmp/my-commits"});
+    EXPECT_FALSE(args.helpRequested);
+    EXPECT_EQ(args.commitsDir, "/tmp/my-commits");
+}
+
+TEST(ParseTimelineArgs, LongHelpFlagSetsHelpRequested) {
+    EXPECT_TRUE(palim::parseTimelineArgs({"--help"}).helpRequested);
+}
+
+TEST(ParseTimelineArgs, ShortHelpFlagSetsHelpRequested) {
+    EXPECT_TRUE(palim::parseTimelineArgs({"-h"}).helpRequested);
+}
+
+// Previously the only bug this closes: palim-timeline had no --help
+// handling at all, so "--help" was silently treated as the commits
+// directory path instead of showing usage.
+TEST(ParseTimelineArgs, HelpFlagIsNotMistakenForACommitsDirectory) {
+    const auto args = palim::parseTimelineArgs({"--help"});
+    EXPECT_TRUE(args.helpRequested);
+    EXPECT_EQ(args.commitsDir, "commits");
+}
+
+// --help takes priority regardless of position, the same way palim's
+// own --help (Phase 22) wins over whatever else is on the command line.
+TEST(ParseTimelineArgs, HelpFlagTakesPriorityOverAPositionalArgument) {
+    EXPECT_TRUE(palim::parseTimelineArgs({"/some/dir", "--help"}).helpRequested);
+    EXPECT_TRUE(palim::parseTimelineArgs({"--help", "/some/dir"}).helpRequested);
+}
+
 TEST(FormatShortHash, TruncatesToSevenCharacters) {
     EXPECT_EQ(palim::formatShortHash("a91e32f1234567890"), "a91e32f");
 }

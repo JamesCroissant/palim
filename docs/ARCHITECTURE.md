@@ -1387,3 +1387,49 @@ propagating out of the test body -- exactly the crash this change
 exists to prevent -- while every other `SnapshotWriterTest` case stayed
 green. Restored the real fix, rebuilt, and confirmed the full suite
 (125 tests) passes again.
+
+## Phase 28: `palim-timeline` had no `--help` -- Phase 22 only ever reached `palim` itself
+
+Found rereading `timeline_main.cpp` fresh against the same question
+Phase 22 already asked of `palim`'s own `main.cpp`: this project ships
+*two* executables built from user-facing argv (`palim` and
+`palim-timeline`), and Phase 22's `--help`/`-h` fix only ever touched
+the first. `timeline_main.cpp` had no argument parsing at all beyond
+"`argv[1]`, if present, is the commits directory" -- so `palim-timeline
+--help` silently treated `--help` as that directory and printed `No
+commits found in "--help"`, not any actual help text. Confirmed
+directly against the real binary before changing anything.
+
+Added `TimelineArgs` (`helpRequested`, `commitsDir`, defaulting to
+`"commits"` the same way `--output-dir` already does for `palim`
+itself) and `parseTimelineArgs()` to `timeline_format.hpp`/`.cpp` --
+the same file every other piece of `palim-timeline`-specific logic
+already lives in, for the same reason its own top comment already
+gives (`timeline_main.cpp` has `int main()`, so nothing in it links
+into a test binary without a duplicate-symbol clash). `--help`/`-h` is
+scanned for first, before the positional argument is even looked at --
+the identical priority Phase 22 gave `palim`'s own `--help` -- and any
+further positional arguments beyond the first stay silently ignored,
+matching this project's pre-existing behavior (only `argv[1]` was ever
+read). `timeline_main.cpp` now calls `parseTimelineArgs()` and checks
+`helpRequested` before ever touching `listCommits()`, printing usage to
+stdout with exit `0` via a small `printUsage()`, the same shape as
+`palim`'s own help path.
+
+Verified against the real binary: `palim-timeline --help` and
+`palim-timeline -h` now print `Usage: palim-timeline [commits_dir]
+[--help]` and exit `0`, where before they printed the wrong "no
+commits found" message; a real commits directory argument is
+unaffected. Added `DefaultsToCommitsDirWithNoArguments`,
+`PositionalArgumentOverridesTheCommitsDir`,
+`LongHelpFlagSetsHelpRequested`, `ShortHelpFlagSetsHelpRequested`,
+`HelpFlagIsNotMistakenForACommitsDirectory`, and
+`HelpFlagTakesPriorityOverAPositionalArgument` to
+`tests/test_timeline_format.cpp`. Verified these are load-bearing:
+temporarily replaced the `--help`/`-h` comparison with `if (false)`,
+rebuilt, and confirmed exactly the four help-related tests failed
+(`DefaultsToCommitsDirWithNoArguments` and
+`PositionalArgumentOverridesTheCommitsDir` stayed green, since neither
+exercises the help path) while the rest of the suite was unaffected;
+restored the real check, rebuilt, and confirmed the full suite
+(131 tests) passes again.

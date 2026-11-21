@@ -262,12 +262,15 @@ abstraction here on purpose (see the project's own learning goals in
 ```sh
 ./build/palim-timeline            # reads ./commits by default
 ./build/palim-timeline path/to/commits
+./build/palim-timeline --help     # or -h
 ```
 
 Prints each commit's change score, sharpness, changed region (when
 one was localized), camera settings, and Git state in order, calling
 out any camera setting or Git state (commit hash, newly modified
-files) that changed since the previous commit.
+files) that changed since the previous commit. `--help`/`-h` takes
+priority over the positional directory argument, the same way `palim`'s
+own `--help` does.
 
 ## Roadmap
 
@@ -292,6 +295,7 @@ Sections referenced below are from the original project spec; see
 - [x] `--max-commits` bounds disk usage for an unattended, long-running `palim` by pruning the oldest commits once the cap is exceeded (Phase 17)
 - [x] `--pixel-diff-threshold`/`--blur-kernel-size` expose `ChangeDetector`'s own sensitivity and noise-filtering knobs, each validated at parse time (Phase 26)
 - [x] A commit that fails to write (disk full, permissions, a blocked path) is reported instead of silently claiming success, and can no longer crash the whole capture/processing/storage pipeline (Phase 27)
+- [x] `palim-timeline --help`/`-h` prints usage instead of being silently misread as the commits directory (Phase 28)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 

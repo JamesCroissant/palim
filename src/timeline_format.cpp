@@ -5,6 +5,20 @@
 
 namespace palim {
 
+TimelineArgs parseTimelineArgs(const std::vector<std::string>& args) {
+    TimelineArgs result;
+    for (const auto& arg : args) {
+        if (arg == "--help" || arg == "-h") {
+            result.helpRequested = true;
+            return result;
+        }
+    }
+    if (!args.empty()) {
+        result.commitsDir = args[0];
+    }
+    return result;
+}
+
 std::string formatShortHash(const std::string& hash) {
     return hash.substr(0, std::min<std::size_t>(7, hash.size()));
 }
