@@ -155,7 +155,10 @@ dirty file paths containing a literal backslash or double quote, a
 numeric field left empty by a write torn mid-field, and `listCommits`
 ordering commits by their actual numeric ID rather than lexicographic
 directory-name order once IDs cross a digit-width boundary like
-999 → 1000),
+999 → 1000 -- including when a stray, non-numeric directory sits
+alongside IDs that have crossed such a boundary, which a plain
+path-comparison fallback gets internally inconsistent rather than
+just differently ordered),
 CLI argument parsing (`parseArgs`), `displayAvailable` (whether
 `DISPLAY`/`WAYLAND_DISPLAY` count as set), `Camera`'s failure paths (no
 device present, a non-V4L2 device), and `palim-timeline`'s own output

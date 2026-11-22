@@ -1433,3 +1433,67 @@ rebuilt, and confirmed exactly the four help-related tests failed
 exercises the help path) while the rest of the suite was unaffected;
 restored the real check, rebuilt, and confirmed the full suite
 (131 tests) passes again.
+
+## Phase 29: `listCommits`'s own sort comparator wasn't a strict weak ordering
+
+Found while reviewing `commit_metadata.cpp`'s `listCommits` fresh: the
+comment above its `std::sort` call claimed falling back to plain path
+comparison "keeps the sort a strict ordering" whenever either side of
+a comparison lacked a parsed numeric ID -- but that's not true once a
+non-numeric directory (a stray entry, exactly the kind this same
+comment already anticipated: a backup directory, anything a human
+created in `commits/`) sits alongside IDs that have crossed a
+digit-width boundary (the exact scenario `ReturnsCommitsInNumericOrder
+AcrossDifferentIdWidths`, added for Phase 21's `cdddd99`, already
+establishes happens on a long-running session). With `"999"`,
+`"1000"`, and a stray `"5_quarantine"`: the old comparator said
+`"1000" < "5_quarantine"` and `"5_quarantine" < "999"` (both fall back
+to raw path comparison, and `'1' < '5' < '9'`), which by transitivity
+would require `"1000" < "999"` -- but the numeric branch, correctly,
+says 1000 is *not* less than 999. That's a strict-weak-ordering
+contract violation, `std::sort`'s own documented requirement for its
+comparator, not just an unlucky-looking edge case.
+
+Reproduced directly with a standalone repro before touching anything:
+confirmed `comp(1000, 5_quarantine)` and `comp(5_quarantine, 999)` both
+true while `comp(1000, 999)` is false under the old logic -- the exact
+A<B, B<C, but not A<C shape a valid comparator must never produce.
+Also checked whether this visibly misorders `listCommits`'s actual
+output with the current `libstdc++`: across dozens of shuffled inputs
+up to 2000+ entries, `std::sort`'s result still happened to satisfy
+`std::is_sorted` under the same (broken) comparator every time --
+undefined behavior that doesn't reliably manifest as visibly wrong
+output isn't the same as safe, the same lesson the project's INT_MIN/
+stack-alignment-class fixes in its sibling projects already established,
+just encountered here instead of there.
+
+Pulled the comparator out of `listCommits`'s own lambda into a named,
+exported `commitDirectoryLessThan(a, b)` (declared in
+`commit_metadata.hpp`, matching `parseTimelineArgs`/`BuildNotifySendCommand`-
+style "pull the one part that actually needs checking into its own
+function" precedent elsewhere in this account's projects) specifically
+so its pairwise contract can be tested directly, independent of
+whatever comparison pattern `std::sort` happens to use for a given
+input size. Fixed by always ranking a directory with a parsed numeric
+ID before one without, rather than only privileging the numeric
+comparison when *both* sides have one: group membership (has an ID or
+not) is now itself consistent and totally ordered, so there's no path
+left for an A<B<C<A-style cycle between a numeric and a non-numeric
+entry. Also corrected `listCommits`'s own header comment, which still
+described the pre-Phase-21 "zero-padded, so lexicographic == numeric
+order" behavior rather than the numeric-ID sort Phase 21 actually put
+in place.
+
+Added `CommitDirectoryLessThan.NumericIdSortsBeforeNonNumericEntry
+EvenAcrossDigitWidths` (the direct, deterministic pairwise check --
+this is the one that's actually load-bearing) and `ListCommits.NumericIds
+SortBeforeAStrayNonNumericEntryEvenAcrossDigitWidths` (the end-to-end
+companion, pinning down the real user-visible order). Verified the
+first is genuinely load-bearing exactly the way this project always
+does: temporarily reverted `commitDirectoryLessThan` to the old
+fallback-to-path logic, rebuilt, and confirmed the pairwise test failed
+on exactly the predicted assertion while the end-to-end `ListCommits`
+test -- as the investigation above already found -- stayed green even
+with the real bug present, confirming that test alone would *not* have
+caught this; restored the fix, rebuilt, and confirmed the full suite
+(133 tests) passes again.
