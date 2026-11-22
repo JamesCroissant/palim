@@ -46,9 +46,22 @@ struct CommitMetadata {
 // missing or unreadable.
 std::optional<CommitMetadata> readCommitMetadata(const std::filesystem::path& commitDir);
 
+// True if directory `a` should sort before directory `b` when listing
+// commits: by numeric ID when both parse as one (SnapshotWriter's own
+// "NNN" naming, any digit width), with a numeric-ID directory always
+// ordered before a non-numeric one (a stray entry that isn't a real
+// commit directory), and by plain path otherwise. Exposed here (rather
+// than kept as a lambda local to listCommits below) specifically so
+// this ordering -- the one part of listCommits that has to satisfy
+// std::sort's own strict-weak-ordering requirement for its comparator
+// -- can be checked directly.
+bool commitDirectoryLessThan(const std::filesystem::path& a, const std::filesystem::path& b);
+
 // Reads every commits/NNN/ subdirectory that has a metadata.json,
-// sorted by directory name (zero-padded, so lexicographic == numeric
-// order).
+// sorted by each directory's actual numeric commit ID (see
+// commitDirectoryLessThan above) rather than by directory name --
+// zero-padding alone doesn't stay ahead of an ID that grows past its
+// padding width (see SnapshotWriter::write()'s own std::setw(3)).
 std::vector<CommitMetadata> listCommits(const std::filesystem::path& commitsDir);
 
 }  // namespace palim

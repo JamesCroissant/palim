@@ -329,4 +329,55 @@ TEST(ListCommits, ReturnsCommitsInNumericOrderAcrossDifferentIdWidths) {
     std::filesystem::remove_all(root);
 }
 
+// The direct, deterministic demonstration of the bug this fixes: with
+// the old version (falling back to plain path comparison whenever
+// either side lacked a parsed ID), commitDirectoryLessThan("999",
+// "5_quarantine") was false -- "999" (a real, numeric commit ID) was
+// *not* considered less than a stray non-numeric entry, purely because
+// '9' > '5' as the first character of a raw path comparison, even
+// though every numeric-ID directory is supposed to sort before any
+// non-numeric one. That single false result, combined with the
+// already-correct commitDirectoryLessThan("1000", "5_quarantine") ==
+// true and commitDirectoryLessThan("999", "1000") == true, is what
+// made the old comparator intransitive (999 < 1000 < 5_quarantine
+// would require 999 < 5_quarantine, but it wasn't). This test doesn't
+// depend on std::sort's own particular comparison pattern for a given
+// input size the way a full ListCommits end-to-end check would --
+// std::sort's internal algorithm can happen to produce the "right-
+// looking" final order even from an invalid comparator for small
+// inputs, which is exactly why this checks the comparator's own
+// pairwise contract directly instead.
+TEST(CommitDirectoryLessThan, NumericIdSortsBeforeNonNumericEntryEvenAcrossDigitWidths) {
+    EXPECT_TRUE(palim::commitDirectoryLessThan("999", "1000"));
+    EXPECT_TRUE(palim::commitDirectoryLessThan("999", "5_quarantine"));
+    EXPECT_TRUE(palim::commitDirectoryLessThan("1000", "5_quarantine"));
+    EXPECT_FALSE(palim::commitDirectoryLessThan("5_quarantine", "1000"));
+    EXPECT_FALSE(palim::commitDirectoryLessThan("5_quarantine", "999"));
+}
+
+// End-to-end companion to the pairwise test above: the same scenario,
+// but through the real listCommits() entry point, pinning down the
+// actual user-visible order this bug (and its fix) produces.
+TEST(ListCommits, NumericIdsSortBeforeAStrayNonNumericEntryEvenAcrossDigitWidths) {
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "palim_test_list_commits_stray_entry";
+    std::filesystem::remove_all(root);
+    for (const std::string& id : {"1000", "5_quarantine", "999"}) {
+        std::filesystem::create_directories(root / id);
+        std::ofstream file(root / id / "metadata.json");
+        file << R"({"timestamp": ")" << id << R"(", "change_score": 0, "sharpness_score": 0,
+                "camera": {"width": 0, "height": 0, "exposure_auto": null, "exposure_absolute": null,
+                           "gain": null, "white_balance_auto": null, "white_balance_temperature": null},
+                "git": {"available": false}})";
+    }
+
+    auto commits = palim::listCommits(root);
+    ASSERT_EQ(commits.size(), 3u);
+    EXPECT_EQ(commits[0].id, "999");
+    EXPECT_EQ(commits[1].id, "1000");
+    EXPECT_EQ(commits[2].id, "5_quarantine");
+
+    std::filesystem::remove_all(root);
+}
+
 }  // namespace

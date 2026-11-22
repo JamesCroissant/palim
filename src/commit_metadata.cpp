@@ -233,6 +233,47 @@ std::optional<int> parseCommitId(const std::filesystem::path& dir) {
 
 }  // namespace
 
+// Directories outside SnapshotWriter's own "NNN" naming (a stray file,
+// something a human created) have no parsed ID -- falling back to
+// comparing those by path, as this used to do unconditionally whenever
+// *either* side lacked an ID, does *not* keep the overall ordering a
+// strict weak one (std::sort's own documented requirement for its
+// comparator) despite what this function used to claim: a numeric dir
+// compared against a non-numeric one fell back to raw path comparison,
+// which doesn't respect the numeric dirs' own relative order once
+// their digit widths differ. E.g. with "999", "1000", and a stray
+// "5_quarantine": "1000" < "5_quarantine" and "5_quarantine" < "999"
+// both hold under plain path comparison ('1' < '5' < '9'), which would
+// require "1000" < "999" by transitivity -- but the numeric branch
+// below correctly says 1000 is *not* less than 999. Confirmed directly:
+// the old version had commitDirectoryLessThan(1000, 5_quarantine) and
+// commitDirectoryLessThan(5_quarantine, 999) both true, but
+// commitDirectoryLessThan(1000, 999) false -- a contract violation,
+// not a strict weak ordering. Three real-world facts make the
+// triggering input concretely reachable at once, not just theoretical:
+// --max-commits (Phase 17) doesn't exist to prevent a long run from
+// ever reaching a 4-digit ID, this file's own
+// ReturnsCommitsInNumericOrderAcrossDifferentIdWidths test already
+// establishes 4-digit IDs happen, and any stray non-"NNN" entry in
+// commits/ (a human-created backup dir, anything this function already
+// anticipated) supplies the non-numeric side. Fixed by always ranking
+// a dir with a parsed numeric ID before one without, instead of only
+// privileging the numeric comparison when *both* sides have one --
+// group membership (has-an-ID or not) is now itself consistent and
+// totally ordered, so there's no path left for an A<B<C<A-style cycle
+// between a numeric and a non-numeric entry.
+bool commitDirectoryLessThan(const std::filesystem::path& a, const std::filesystem::path& b) {
+    const auto idA = parseCommitId(a);
+    const auto idB = parseCommitId(b);
+    if (idA && idB) {
+        return *idA < *idB;
+    }
+    if (idA.has_value() != idB.has_value()) {
+        return idA.has_value();  // a numeric ID always sorts first
+    }
+    return a < b;  // neither has an ID: fall back to path
+}
+
 std::vector<CommitMetadata> listCommits(const std::filesystem::path& commitsDir) {
     std::vector<CommitMetadata> result;
     if (!std::filesystem::exists(commitsDir)) {
@@ -245,18 +286,10 @@ std::vector<CommitMetadata> listCommits(const std::filesystem::path& commitsDir)
             dirs.push_back(entry.path());
         }
     }
-    // Directories outside SnapshotWriter's own "NNN" naming (a stray
-    // file, something a human created) have no parsed ID -- fall back
-    // to comparing those by path so the sort stays a strict ordering,
-    // but every real commit directory sorts by its actual numeric ID.
-    std::sort(dirs.begin(), dirs.end(), [](const auto& a, const auto& b) {
-        const auto idA = parseCommitId(a);
-        const auto idB = parseCommitId(b);
-        if (idA && idB) {
-            return *idA < *idB;
-        }
-        return a < b;
-    });
+    // See commitDirectoryLessThan's own comment for why this can't just
+    // fall back to comparing paths whenever either side lacks a parsed
+    // numeric ID.
+    std::sort(dirs.begin(), dirs.end(), commitDirectoryLessThan);
 
     for (const auto& dir : dirs) {
         if (auto m = readCommitMetadata(dir)) {
