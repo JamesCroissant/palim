@@ -1497,3 +1497,57 @@ test -- as the investigation above already found -- stayed green even
 with the real bug present, confirming that test alone would *not* have
 caught this; restored the fix, rebuilt, and confirmed the full suite
 (133 tests) passes again.
+
+## Phase 30: a failed buffer requeue was logged and ignored, not treated as a failure
+
+Found reading `Camera::grab()` fresh. Its capture cycle is
+`VIDIOC_DQBUF` (driver hands over a filled buffer) -> convert YUYV to
+BGR (copying into a `cv::Mat` this code owns) -> `VIDIOC_QBUF` (hand
+the now-empty buffer back to the driver so it can be filled again).
+`VIDIOC_DQBUF` failing already returns `std::nullopt`, correctly
+feeding `main.cpp`'s `ConsecutiveFailureGuard` the same way a
+disconnected camera does. `VIDIOC_QBUF` failing -- the requeue step --
+only ever logged the error and still returned the successfully
+captured frame.
+
+That's not a cosmetic difference between the two failure paths: once
+`VIDIOC_QBUF` fails, that specific buffer is gone from the driver's
+queue for good -- nothing later ever retries requeuing it, and
+`grab()` has no path that would. Returning the frame anyway reports
+success to `main.cpp`, which calls `recordSuccess()` on the exact same
+`ConsecutiveFailureGuard` a real disconnect needs 30 consecutive
+*failures* to trip -- so a requeue failure not only goes unreported,
+it actively resets whatever failure count had been accumulating from
+anything else. Repeated failures of this kind permanently shrink the
+usable buffer pool (`requestBuffers()` asks for 4, but the driver can
+grant as few as 2) with every one of them silently "succeeding." Once
+every buffer has been lost this way, the next `VIDIOC_DQBUF` has
+nothing left to dequeue and blocks forever -- a silent, unrecoverable
+hang that `ConsecutiveFailureGuard` could never catch, since `grab()`
+would never return again to update it either way.
+
+Changed the `VIDIOC_QBUF` failure branch to return `std::nullopt`
+instead of the already-captured `bgr`, discarding that one frame --
+the same outcome `VIDIOC_DQBUF` failing already produces, and exactly
+what feeds a requeue failure into the same consecutive-failure
+counting a real disconnect relies on. A driver that keeps failing to
+requeue is now caught and reported as a disconnect after enough
+consecutive failures, the same way a truly unplugged camera already
+is, instead of degrading silently toward an unexplained hang.
+
+`Camera::grab()` against a real V4L2 device can't be exercised in this
+headless container (no `/dev/video0`, as `tests/test_camera.cpp`'s own
+comment already states) -- this environment has no way to make a real
+`VIDIOC_QBUF` call fail on demand to add a direct regression test for
+it, the same documented limitation this file's own `## Testing` story
+already carries for every other `Camera::grab()` behavior. Verified by
+code review instead: traced every call site between the old `return
+bgr;` (now gated behind the new `return std::nullopt;`) and confirmed
+`main.cpp`'s capture-thread lambda already treats any `nullopt` from
+`grab()` identically regardless of *why* it happened (DQBUF failing or
+QBUF failing) -- `recordFailure()`, then either retry after a short
+delay or give up and report a disconnect once the threshold is hit --
+so this change needed no new branch anywhere outside `Camera` itself.
+Rebuilt and confirmed the full suite (133 tests) still passes
+unaffected, as expected for a change confined entirely to a code path
+this suite has never been able to exercise.

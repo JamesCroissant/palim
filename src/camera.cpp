@@ -223,7 +223,27 @@ std::optional<cv::Mat> Camera::grab() {
     cv::cvtColor(yuyv, bgr, cv::COLOR_YUV2BGR_YUYV);
 
     if (xioctl(fd_, VIDIOC_QBUF, &buf) < 0) {
+        // This buffer is now stuck outside the driver's queue for good --
+        // nothing later ever retries requeuing it, so it's simply gone
+        // from the pool of buffers VIDIOC_DQBUF can still hand out. That
+        // makes this a real failure, not a cosmetic one to log and move
+        // past: returning `bgr` here anyway would report success to
+        // main.cpp's ConsecutiveFailureGuard (resetting its count) while
+        // the camera quietly loses one more usable buffer every time this
+        // happens, with nothing to ever notice. Once every buffer has
+        // been lost this way, the next VIDIOC_DQBUF has nothing left to
+        // dequeue and blocks forever -- a silent, unrecoverable hang, not
+        // a disconnect ConsecutiveFailureGuard could have caught, since
+        // grab() would never even return again to update it. Returning
+        // nullopt instead -- discarding this one already-captured frame
+        // -- feeds this into the exact same consecutive-failure counting
+        // main.cpp already applies to a failed VIDIOC_DQBUF, so a driver
+        // that keeps failing to requeue is caught and reported as a
+        // disconnect after enough consecutive failures, the same way a
+        // truly disconnected camera already is, instead of degrading
+        // silently toward that same hang with no diagnostic at all.
         std::cerr << "Camera: VIDIOC_QBUF (requeue) failed: " << std::strerror(errno) << "\n";
+        return std::nullopt;
     }
 
     return bgr;
