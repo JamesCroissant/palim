@@ -1551,3 +1551,40 @@ so this change needed no new branch anywhere outside `Camera` itself.
 Rebuilt and confirmed the full suite (133 tests) still passes
 unaffected, as expected for a change confined entirely to a code path
 this suite has never been able to exercise.
+
+## Phase 31: the timeline's own "what changed?" diff silently skipped two camera settings
+
+Phase 6's own description of `palim-timeline` promises it "calls out
+any camera setting that changed (exposure, gain, white balance)"
+between consecutive commits. `CommitMetadata` has carried
+`exposureAuto`/`whiteBalanceAuto` (V4L2's own auto-exposure/auto-white-
+balance mode controls, read via `VIDIOC_G_CTRL` and round-tripped
+through `metadata.json` the same as every other camera setting) since
+Phase 5 -- but `timeline_main.cpp`'s between-commit diff block only
+ever called `formatOptionalIntChange()` for `exposureAbsolute`, `gain`,
+and `whiteBalanceTemperature`. A camera switching from auto-exposure to
+manual (or back) between two commits -- a genuinely meaningful,
+deliberate-feeling change, arguably more so than the absolute exposure
+value drifting on its own while still in auto mode -- was silently
+never reported, even though the exact same diffing mechanism already
+existed and was already wired up for the other three fields.
+
+Added two more `formatOptionalIntChange()` calls in `timeline_main.cpp`
+-- `exposure_auto` and `white_balance_auto` -- right alongside the
+existing three, using the exact same function with no changes needed
+to `timeline_format.hpp/.cpp` itself: `formatOptionalIntChange` was
+already fully generic over any `std::optional<int>` pair, this was
+purely a case of two fields nobody had ever wired into the call site
+that uses it.
+
+`timeline_main.cpp` has `int main()`, so nothing in it links into the
+test binary (the same reason `timeline_format.cpp` was split out of it
+in the first place) -- verified instead the same way Phase 6's own
+"Verified" paragraph did, against the real binary: built a synthetic
+two-commit `commits/` directory by hand with `exposure_auto`/
+`white_balance_auto` flipping from `1` to `0` between them, confirmed
+the unmodified binary printed an empty `|` -> `v` block with the change
+silently missing, then rebuilt with the fix and confirmed it now
+prints `exposure_auto: 1 -> 0` and `white_balance_auto: 1 -> 0`.
+Confirmed the full suite (133 tests) is unaffected either way, as
+expected for a change confined to `timeline_main.cpp`'s own wiring.
