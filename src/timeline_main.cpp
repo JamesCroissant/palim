@@ -39,8 +39,11 @@ int main(int argc, char** argv) {
         if (i + 1 < commits.size()) {
             const auto& next = commits[i + 1];
             std::cout << "\n        |\n";
+            std::cout << palim::formatOptionalIntChange("exposure_auto", commits[i].exposureAuto, next.exposureAuto);
             std::cout << palim::formatOptionalIntChange("exposure", commits[i].exposureAbsolute, next.exposureAbsolute);
             std::cout << palim::formatOptionalIntChange("gain", commits[i].gain, next.gain);
+            std::cout << palim::formatOptionalIntChange("white_balance_auto", commits[i].whiteBalanceAuto,
+                                                          next.whiteBalanceAuto);
             std::cout << palim::formatOptionalIntChange("white_balance", commits[i].whiteBalanceTemperature,
                                                           next.whiteBalanceTemperature);
             std::cout << palim::formatGitChange(commits[i], next);
