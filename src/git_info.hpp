@@ -27,4 +27,15 @@ GitInfo captureGitInfo();
 // subprocess or repository.
 std::vector<std::string> parseDirtyFiles(const std::string& porcelainOutput);
 
+// Undoes the C-style double-quoting `git status --porcelain` wraps a
+// path in whenever it contains a character core considers "unusual"
+// (a literal double quote or backslash, a control character, or --
+// since core.quotePath defaults to true -- any non-ASCII byte, each
+// escaped as \NNN octal). Returns `path` unchanged if it isn't quoted
+// at all. Exported (not file-local, like parseDirtyFiles's own helpers)
+// specifically so this escaping logic -- the one part of parsing a
+// dirty-file line that can silently mangle a real filename rather than
+// just mis-splitting a line -- is directly testable on its own.
+std::string unquoteGitPath(const std::string& path);
+
 }  // namespace palim
