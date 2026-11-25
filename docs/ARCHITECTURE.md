@@ -1588,3 +1588,62 @@ silently missing, then rebuilt with the fix and confirmed it now
 prints `exposure_auto: 1 -> 0` and `white_balance_auto: 1 -> 0`.
 Confirmed the full suite (133 tests) is unaffected either way, as
 expected for a change confined to `timeline_main.cpp`'s own wiring.
+
+## Phase 32: dirty-file paths with a quote or backslash were recorded garbled
+
+`parseDirtyFiles` takes each `git status --porcelain` line, skips its
+2-character status code and the space after it, and keeps the rest as
+the dirty file's path -- reasonable, since an ordinary path is exactly
+that substring. But `git status --porcelain` doesn't emit a path
+verbatim once it contains a character core considers "unusual": a
+literal double quote or backslash, a control character, or (since
+`core.quotePath` defaults to true) any non-ASCII byte. Instead it wraps
+the *entire* path in double quotes and C-escapes every such byte
+inside it. Confirmed directly against a real repository, not assumed:
+a file named `weird"quote.txt` shows up in porcelain output as the
+18-character literal `"weird\"quote.txt"`, and a file named
+`back\slash.txt` as `"back\\slash.txt"` -- `parseDirtyFiles` was taking
+that literal quoted-and-escaped text as the path, rather than the real
+15- and 14-character filenames. Every consumer downstream --
+`metadata.json`'s `dirty_files` array, `palim-timeline`'s "newly dirty
+files" diff -- inherited the same garbled text, for any dirty file
+whose name happened to be unusual enough to trigger this.
+
+Added `unquoteGitPath(path)`: returns `path` unchanged unless it's
+quoted over its *entire* length (the common case -- an ordinary
+filename never gets this treatment at all), and otherwise reverses
+core's own escaping -- `\"`, `\\`, the usual single-letter C escapes
+(`\n`, `\t`, ...), and `\NNN` three-digit octal escapes for a raw
+non-ASCII byte. Exported from `git_info.hpp` (not kept file-local, the
+way `rstrip`/`runCommand` are) specifically so this escaping logic --
+the one part of parsing a dirty-file line that can silently mangle a
+real filename, not just mis-split a line -- is directly testable on
+its own, independent of whatever a given porcelain line's shape
+happens to be. Wired into `parseDirtyFiles` around the existing
+`rstrip(line.substr(3))` call. Deliberately left a rename line's
+`"<old> -> <new>"` combined string (see that function's own comment)
+unresolved when only one side is quoted -- unquoting half of a
+still-combined string would mean guessing which half changed, not
+something this fix tries to solve.
+
+Verified the real quoting/escaping shape directly against a real git
+repository before writing anything: created files named
+`weird"quote.txt` and `back\slash.txt`, ran `git status --porcelain`,
+and confirmed byte-for-byte what came back (`cat -A`) before using that
+exact text as the test fixtures below, rather than guessing at git's
+escaping format. Added `ParseDirtyFiles.UnquotesAPathContainingADouble
+Quote`/`UnquotesAPathContainingABackslash` (the end-to-end case, using
+that captured real output), `ParseDirtyFiles.LeavesAnUnquotedPathAlone`
+(the common case must stay untouched), and four direct
+`UnquoteGitPath.*` tests covering the unquoted-passthrough case, both
+escape kinds together, a genuine octal byte escape (`\303\251`, UTF-8
+for é), and the "quoted at only one end" rename case staying
+unresolved on purpose. Verified the fix is actually load-bearing:
+reverted `parseDirtyFiles` to call `rstrip(line.substr(3))` directly
+again (skipping the new unquoting call), rebuilt, and confirmed exactly
+the two end-to-end tests failed with the predicted garbled output while
+all four direct `UnquoteGitPath` tests -- which exercise the function
+itself, not its wiring -- stayed green, confirming those two were the
+only ones actually testing the regression this fix closes. Restored
+the fix, rebuilt, and confirmed the full suite (140 tests) passes
+again.

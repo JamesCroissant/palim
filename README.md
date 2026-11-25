@@ -147,9 +147,11 @@ already-noisy frames compared to each other), `BlockingQueue`
 (including concurrent producer/consumer and ThreadSanitizer-clean
 shutdown behavior), `GitInfo` (including `parseDirtyFiles`'s handling
 of `git status --porcelain` lines -- ordinary entries, a rename kept as
-one combined string, a trailing `\r`, and lines too short to contain a
-path -- against synthetic text, not just whatever this repo's own
-working tree looks like at test time), `commit_metadata` parsing (including
+one combined string, a trailing `\r`, lines too short to contain a
+path, and `unquoteGitPath` reversing the double-quoting and C-escaping
+git itself applies to any path containing a literal quote, backslash,
+or non-ASCII byte -- against synthetic text, not just whatever this
+repo's own working tree looks like at test time), `commit_metadata` parsing (including
 `changed_region`, its `null` form, its absence in older commits,
 dirty file paths containing a literal backslash or double quote, a
 numeric field left empty by a write torn mid-field, and `listCommits`
@@ -299,6 +301,7 @@ Sections referenced below are from the original project spec; see
 - [x] `--pixel-diff-threshold`/`--blur-kernel-size` expose `ChangeDetector`'s own sensitivity and noise-filtering knobs, each validated at parse time (Phase 26)
 - [x] A commit that fails to write (disk full, permissions, a blocked path) is reported instead of silently claiming success, and can no longer crash the whole capture/processing/storage pipeline (Phase 27)
 - [x] `palim-timeline --help`/`-h` prints usage instead of being silently misread as the commits directory (Phase 28)
+- [x] A dirty file whose name contains a quote, backslash, or non-ASCII byte is recorded under its real name instead of git's own quoted/escaped text (Phase 32)
 - [ ] Physical-side "what" changed (object recognition, beyond the bounding box above)
 - [ ] "Possible cause" debugging suggestions
 
