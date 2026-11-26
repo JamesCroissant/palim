@@ -1647,3 +1647,81 @@ itself, not its wiring -- stayed green, confirming those two were the
 only ones actually testing the regression this fix closes. Restored
 the fix, rebuilt, and confirmed the full suite (140 tests) passes
 again.
+
+## Phase 33: no compiler warnings enabled at all, and what enabling them found
+
+Unlike this account's other two from-scratch projects -- os-practice's
+Makefile has carried `-Wall -Wextra` since its very first commit;
+focus-monitor's CMakeLists.txt gained the same, then `-Werror`, then
+`-Wshadow -Wpedantic`, across several days once the gap was noticed --
+`palim`'s CMakeLists.txt never turned on any compiler warnings at all.
+Added `add_compile_options(-Wall -Wextra -Wshadow -Wpedantic -Werror)`
+globally, before any `add_library`/`add_executable`, so `palim_lib`,
+both real executables, and the test binary all get it, not just one
+target. `target_include_directories(palim_lib PUBLIC ...)` previously
+mixed this project's own `src/` directory with `${OpenCV_INCLUDE_DIRS}`
+in one call -- split into two, with OpenCV's own include directories
+now passed with the `SYSTEM` keyword, matching focus-monitor's own
+precedent: `-Werror` means any warning now fails the build, including
+one originating inside a header this project doesn't own, and CI's own
+build step installs whatever `libopencv-dev` the runner's current
+package index has rather than a version pinned anywhere in this repo.
+`SYSTEM` suppresses warnings from inside OpenCV's own headers
+regardless of these flags while leaving all of them fully enforced
+against this project's own code (confirmed directly in the generated
+`flags.make`: `-isystem /usr/include/opencv4`, not `-I`).
+
+Unlike focus-monitor's own history (where the codebase was already
+clean when the flags were added), enabling these on `palim` found two
+real things, both fixed in this same change rather than left as
+follow-up work:
+
+**`FrameHistory`'s own internal storage silently carried a dead field.**
+`FrameHistory::push()` built its ring-buffer entries as
+`FrameSample{timestamp, frame.clone()}` -- but `FrameSample` (defined
+right above it, and also used as the capture-to-processing queue's own
+message type in `main.cpp`) has *three* fields: `timestamp`, `frame`,
+and `settings`. The third was always left default-constructed inside
+`FrameHistory`'s buffer, and nothing anywhere ever read a buffered
+frame's `settings` back out -- `bestFrameInRange()` only ever returns
+`std::optional<cv::Mat>`, never the settings alongside it.
+`-Wmissing-field-initializers` (part of `-Wextra`) flagged this as a
+real aggregate-initialization call missing a member, not a style nit:
+reusing a type built for a different role (carrying camera settings
+from the capture thread to the eventual commit) inside a role that
+never needed that field meant every buffered frame was copying a
+`CameraSettings` (five `std::optional<int>`s) for no reason, and -- had
+anyone ever actually started reading `.settings` off a buffered frame
+later, expecting it to reflect *that* frame's own capture-time
+settings -- they'd have silently gotten default-constructed nulls
+instead. Fixed by giving `FrameHistory` its own private nested
+`BufferedFrame` struct (`timestamp` + `frame` only) instead of reusing
+`FrameSample`, and switching `RingBuffer<FrameSample> buffer_` to
+`RingBuffer<BufferedFrame> buffer_` accordingly. `FrameSample` itself
+is untouched -- `main.cpp`'s own use of it (where `settings` is
+genuinely meaningful) didn't need to change at all.
+
+**Three GTest range-for loops bound a reference to a per-iteration
+temporary.** `tests/test_commit_metadata.cpp` had
+`for (const std::string& id : {"003", "001", "002"})` (and two more
+like it) -- the braced list is `std::initializer_list<const char*>`,
+so binding a `const std::string&` to each element implicitly
+constructs a temporary `std::string` per iteration.
+`-Wrange-loop-construct` (part of `-Wextra`) flags this: while the
+temporary's lifetime is correctly extended to match the reference's
+scope here (not a dangling-reference bug in this specific case), it's
+exactly the kind of implicit-conversion-inside-a-range-for pattern
+that *can* dangle under slightly different code shapes, and GCC's own
+suggested fix -- binding by value instead -- is strictly clearer about
+what's actually happening. Changed all three loop variables from
+`const std::string&` to `const std::string`.
+
+Verified the whole codebase (`palim_lib`, `palim`, `palim-timeline`,
+`palim_tests`) builds clean from scratch under the new flags, and that
+the `FrameHistory` fix is genuinely load-bearing: temporarily reverted
+`frame_history.hpp`/`.cpp` back to reusing `FrameSample` (restoring the
+exact original missing-field-initializer call), rebuilt, and confirmed
+the identical "`missing initializer for member
+'palim::FrameSample::settings'`" error reappeared in exactly that one
+file. Restored the fix, rebuilt, and confirmed the full suite (140
+tests) passes again.
