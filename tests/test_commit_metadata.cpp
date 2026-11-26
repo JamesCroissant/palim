@@ -278,7 +278,7 @@ TEST(ListCommits, ReturnsEmptyForMissingDirectory) {
 TEST(ListCommits, ReturnsCommitsInNumericOrder) {
     const std::filesystem::path root = std::filesystem::temp_directory_path() / "palim_test_list_commits";
     std::filesystem::remove_all(root);
-    for (const std::string& id : {"003", "001", "002"}) {
+    for (const std::string id : {"003", "001", "002"}) {
         std::filesystem::create_directories(root / id);
         std::ofstream file(root / id / "metadata.json");
         file << R"({"timestamp": ")" << id << R"(", "change_score": 0, "sharpness_score": 0,
@@ -310,7 +310,7 @@ TEST(ListCommits, ReturnsCommitsInNumericOrderAcrossDifferentIdWidths) {
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / "palim_test_list_commits_mixed_width";
     std::filesystem::remove_all(root);
-    for (const std::string& id : {"1001", "998", "1000", "999"}) {
+    for (const std::string id : {"1001", "998", "1000", "999"}) {
         std::filesystem::create_directories(root / id);
         std::ofstream file(root / id / "metadata.json");
         file << R"({"timestamp": ")" << id << R"(", "change_score": 0, "sharpness_score": 0,
@@ -362,7 +362,7 @@ TEST(ListCommits, NumericIdsSortBeforeAStrayNonNumericEntryEvenAcrossDigitWidths
     const std::filesystem::path root =
         std::filesystem::temp_directory_path() / "palim_test_list_commits_stray_entry";
     std::filesystem::remove_all(root);
-    for (const std::string& id : {"1000", "5_quarantine", "999"}) {
+    for (const std::string id : {"1000", "5_quarantine", "999"}) {
         std::filesystem::create_directories(root / id);
         std::ofstream file(root / id / "metadata.json");
         file << R"({"timestamp": ")" << id << R"(", "change_score": 0, "sharpness_score": 0,

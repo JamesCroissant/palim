@@ -10,7 +10,7 @@ void FrameHistory::push(cv::Mat frame, std::chrono::steady_clock::time_point tim
     // clone(): VideoCapture backends can reuse an internal buffer across
     // reads, so holding onto a frame past the next grab() call needs an
     // independent copy, not just another reference to the same memory.
-    buffer_.push(FrameSample{timestamp, frame.clone()});
+    buffer_.push(BufferedFrame{timestamp, frame.clone()});
 }
 
 std::optional<cv::Mat> FrameHistory::bestFrameInRange(std::chrono::steady_clock::time_point from,

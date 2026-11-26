@@ -4,6 +4,20 @@ project(palim CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Unlike this account's other two from-scratch projects (os-practice's
+# Makefile has carried -Wall -Wextra since its very first commit;
+# focus-monitor's CMakeLists.txt gained the same, plus -Wshadow/
+# -Wpedantic/-Werror, across several days once the gap was noticed),
+# this project had no compiler warnings enabled at all. Applied
+# globally, before any add_library/add_executable below, so palim_lib,
+# both real executables, and the test binary all get it. -Werror is
+# included from the start here (not added separately later, the way
+# focus-monitor's own history did it) since every warning this actually
+# surfaced is fixed in the same change that adds the flags -- see
+# frame_history.hpp's own comment on BufferedFrame, and the three
+# range-for loops in tests/test_commit_metadata.cpp.
+add_compile_options(-Wall -Wextra -Wshadow -Wpedantic -Werror)
+
 # No more videoio: Camera now talks to V4L2 directly (open/ioctl/mmap)
 # instead of going through cv::VideoCapture.
 find_package(OpenCV REQUIRED COMPONENTS core imgproc highgui imgcodecs)
@@ -26,7 +40,20 @@ add_library(palim_lib STATIC
     src/config.cpp
     src/timeline_format.cpp
 )
-target_include_directories(palim_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${OpenCV_INCLUDE_DIRS})
+target_include_directories(palim_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+# SYSTEM, separate from this project's own src/ above: -Werror means ANY
+# warning now fails the build, including one that originates inside a
+# header this project doesn't own. CI's own build step installs
+# whatever libopencv-dev the runner's current package index has, not a
+# version pinned anywhere in this repo -- a future OpenCV upgrade adding
+# so much as one new deprecation warning to its own public headers
+# would otherwise break this build for a reason nothing in this repo
+# caused or can fix by itself. SYSTEM suppresses warnings that
+# originate inside OpenCV's own headers regardless of -Wall/-Wextra/
+# -Wshadow/-Wpedantic/-Werror, the same treatment the C++ standard
+# library's own headers already get, while leaving all of those fully
+# enforced against this project's own code.
+target_include_directories(palim_lib SYSTEM PUBLIC ${OpenCV_INCLUDE_DIRS})
 target_link_libraries(palim_lib PUBLIC ${OpenCV_LIBS} Threads::Threads)
 
 add_executable(palim src/main.cpp)

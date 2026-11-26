@@ -31,7 +31,23 @@ public:
                                              std::chrono::steady_clock::time_point to) const;
 
 private:
-    RingBuffer<FrameSample> buffer_;
+    // Only what FrameHistory itself needs to pick the sharpest frame in
+    // a time range -- unlike FrameSample above (the capture-to-
+    // processing queue message, which also carries the camera's
+    // settings at capture time for the eventual commit), nothing here
+    // ever reads a buffered frame's settings back out, so storing one
+    // in every entry would just be a CameraSettings copied for no
+    // purpose on every push(). Enabling -Wextra (it wasn't on at all
+    // before) caught this directly: reusing FrameSample here left its
+    // settings field permanently default-constructed and unread, which
+    // -Wmissing-field-initializers flagged as a real aggregate-init
+    // call, not a style nit.
+    struct BufferedFrame {
+        std::chrono::steady_clock::time_point timestamp{};
+        cv::Mat frame;
+    };
+
+    RingBuffer<BufferedFrame> buffer_;
 };
 
 }  // namespace palim
