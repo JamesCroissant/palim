@@ -84,11 +84,17 @@ std::string formatCommit(const CommitMetadata& c) {
         out << "  region: (" << r.x << "," << r.y << ") " << r.width << "x" << r.height << "\n";
     }
     out << "  camera: " << c.width << "x" << c.height;
+    if (c.exposureAuto) {
+        out << "  exposure_auto=" << *c.exposureAuto;
+    }
     if (c.exposureAbsolute) {
         out << "  exposure=" << *c.exposureAbsolute;
     }
     if (c.gain) {
         out << "  gain=" << *c.gain;
+    }
+    if (c.whiteBalanceAuto) {
+        out << "  white_balance_auto=" << *c.whiteBalanceAuto;
     }
     if (c.whiteBalanceTemperature) {
         out << "  wb=" << *c.whiteBalanceTemperature << "K";

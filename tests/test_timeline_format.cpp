@@ -145,12 +145,31 @@ TEST(FormatCommit, IncludesOptionalCameraControlsOnlyWhenPresent) {
     CommitMetadata c;
     c.exposureAbsolute = 200;
     c.gain = 10;
-    // whiteBalanceTemperature left as std::nullopt.
+    // exposureAuto, whiteBalanceAuto, and whiteBalanceTemperature left as
+    // std::nullopt.
 
     const std::string formatted = palim::formatCommit(c);
     EXPECT_NE(formatted.find("exposure=200"), std::string::npos);
     EXPECT_NE(formatted.find("gain=10"), std::string::npos);
+    EXPECT_EQ(formatted.find("exposure_auto="), std::string::npos);
+    EXPECT_EQ(formatted.find("white_balance_auto="), std::string::npos);
     EXPECT_EQ(formatted.find("wb="), std::string::npos);
+}
+
+// exposureAuto/whiteBalanceAuto have been collected since Phase 5, the
+// same as exposureAbsolute/gain/whiteBalanceTemperature just above, but
+// formatCommit() never printed either one at all until now -- the same
+// "promised in Phase 6's own description (palim-timeline prints 'camera
+// settings' per commit), missing in practice" gap Phase 31 already fixed
+// once for the between-commit diff block, just at this call site instead.
+TEST(FormatCommit, IncludesAutoExposureAndAutoWhiteBalanceWhenPresent) {
+    CommitMetadata c;
+    c.exposureAuto = 1;
+    c.whiteBalanceAuto = 0;
+
+    const std::string formatted = palim::formatCommit(c);
+    EXPECT_NE(formatted.find("exposure_auto=1"), std::string::npos);
+    EXPECT_NE(formatted.find("white_balance_auto=0"), std::string::npos);
 }
 
 TEST(FormatCommit, IncludesGitSummaryWhenAvailable) {
