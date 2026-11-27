@@ -1725,3 +1725,46 @@ the identical "`missing initializer for member
 'palim::FrameSample::settings'`" error reappeared in exactly that one
 file. Restored the fix, rebuilt, and confirmed the full suite (140
 tests) passes again.
+
+## Phase 34: formatCommit() never printed auto-exposure/auto-white-balance
+
+Phase 5 added `exposureAuto`/`whiteBalanceAuto` (V4L2's own
+auto-exposure/auto-white-balance mode controls) to `CommitMetadata`,
+captured and round-tripped through `metadata.json` identically to
+`exposureAbsolute`/`gain`/`whiteBalanceTemperature`. Phase 31 (Nov 24)
+fixed `timeline_main.cpp`'s between-commit diff block to actually call
+`formatOptionalIntChange()` for both of them -- but never audited the
+*other* place a commit's camera settings get printed:
+`formatCommit()`'s own per-commit summary line, which already prints
+`exposureAbsolute`/`gain`/`whiteBalanceTemperature` "only when present"
+(the exact shape `FormatCommit.IncludesOptionalCameraControlsOnlyWhen
+Present` already tests for those three) but never printed
+`exposureAuto`/`whiteBalanceAuto` at all. README's own description of
+`palim-timeline` promises it prints "camera settings" per commit, not
+just the three that happened to get wired up first -- the same root
+cause as Phase 31, just a different call site this time, and one
+Phase 31's own fix didn't touch.
+
+Added `exposure_auto=`/`white_balance_auto=` to `formatCommit()`,
+following the same "only when present" pattern as the other three
+fields, placed next to the field each one modifies (`exposure_auto`
+before `exposure`, `white_balance_auto` before `wb`) and using the
+exact same label text `timeline_main.cpp`'s diff block already uses
+for the same two fields, so a reader sees consistent naming between
+the per-commit summary and the between-commit diff.
+
+Verified against the real `palim-timeline` binary: a synthetic
+`commits/001/metadata.json` with `exposure_auto: 1` and
+`white_balance_auto: 0` now prints `exposure_auto=1` and
+`white_balance_auto=0` in the commit's own `camera:` line, where
+before this fix neither appeared at all. Extended
+`FormatCommit.IncludesOptionalCameraControlsOnlyWhenPresent` to also
+confirm `exposure_auto=`/`white_balance_auto=` stay absent when unset
+(matching its own existing checks for `wb=`), and added
+`FormatCommit.IncludesAutoExposureAndAutoWhiteBalanceWhenPresent` for
+the positive case. Verified the new test is genuinely load-bearing:
+temporarily reverted the two new `if` blocks in `formatCommit()`,
+rebuilt, and confirmed exactly that one new test failed (both of its
+assertions) while the other five `FormatCommit` tests, including the
+extended "only when present" one, stayed green. Restored the fix,
+rebuilt, and confirmed the full suite (141 tests) passes again.
