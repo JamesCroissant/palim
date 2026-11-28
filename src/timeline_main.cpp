@@ -39,6 +39,7 @@ int main(int argc, char** argv) {
         if (i + 1 < commits.size()) {
             const auto& next = commits[i + 1];
             std::cout << "\n        |\n";
+            std::cout << palim::formatResolutionChange(commits[i], next);
             std::cout << palim::formatOptionalIntChange("exposure_auto", commits[i].exposureAuto, next.exposureAuto);
             std::cout << palim::formatOptionalIntChange("exposure", commits[i].exposureAbsolute, next.exposureAbsolute);
             std::cout << palim::formatOptionalIntChange("gain", commits[i].gain, next.gain);

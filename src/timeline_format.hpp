@@ -45,6 +45,21 @@ std::string formatShortHash(const std::string& hash);
 std::string formatOptionalIntChange(const std::string& label, std::optional<int> before,
                                      std::optional<int> after);
 
+// "        resolution: <W>x<H> -> <W>x<H>\n", or an empty string if
+// neither dimension changed. Unlike every other camera setting
+// (exposure, gain, white balance, ...), width/height are plain `int`s
+// in CommitMetadata, never std::optional -- a capture resolution is
+// always known, never "unsupported by this device" -- so this can't
+// reuse formatOptionalIntChange, and reports both dimensions as one
+// combined change (matching how formatCommit's own "camera: WxH" line
+// already shows them together) rather than as two separate lines.
+// Reachable in practice, not just theoretically: restarting palim
+// against an existing commits/ directory with different --width/
+// --height resumes numbering (Phase 11) rather than starting a new
+// experiment, so two commits from different invocations of the same
+// experiment can genuinely have different resolutions.
+std::string formatResolutionChange(const CommitMetadata& before, const CommitMetadata& after);
+
 // The "what changed on the software side?" block between two
 // consecutive commits: the Git commit hash moving, and any files that
 // became dirty that weren't before (files that went from dirty to

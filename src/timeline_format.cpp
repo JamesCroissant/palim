@@ -45,6 +45,16 @@ std::string formatOptionalIntChange(const std::string& label, std::optional<int>
     return out.str();
 }
 
+std::string formatResolutionChange(const CommitMetadata& before, const CommitMetadata& after) {
+    if (before.width == after.width && before.height == after.height) {
+        return "";
+    }
+    std::ostringstream out;
+    out << "        resolution: " << before.width << "x" << before.height << " -> " << after.width << "x"
+        << after.height << "\n";
+    return out.str();
+}
+
 std::string formatGitChange(const CommitMetadata& before, const CommitMetadata& after) {
     if (!before.gitAvailable || !after.gitAvailable) {
         return "";

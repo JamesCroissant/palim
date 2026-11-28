@@ -116,6 +116,35 @@ TEST(FormatGitChange, DoesNotReportFilesThatBecameClean) {
     EXPECT_EQ(palim::formatGitChange(before, after), "");
 }
 
+TEST(FormatResolutionChange, EmptyWhenNeitherDimensionChanged) {
+    CommitMetadata before, after;
+    before.width = after.width = 1280;
+    before.height = after.height = 720;
+    EXPECT_EQ(palim::formatResolutionChange(before, after), "");
+}
+
+// Reachable in practice: restarting palim against an existing commits/
+// directory with different --width/--height resumes numbering (Phase
+// 11) rather than starting a fresh experiment, so two commits from
+// different invocations of the same experiment can genuinely differ
+// here.
+TEST(FormatResolutionChange, ReportsAChangeInEitherDimension) {
+    CommitMetadata before, after;
+    before.width = 1280;
+    before.height = 720;
+    after.width = 640;
+    after.height = 480;
+    EXPECT_EQ(palim::formatResolutionChange(before, after), "        resolution: 1280x720 -> 640x480\n");
+}
+
+TEST(FormatResolutionChange, ReportsAChangeInOnlyOneDimension) {
+    CommitMetadata before, after;
+    before.width = after.width = 1280;
+    before.height = 720;
+    after.height = 1024;
+    EXPECT_EQ(palim::formatResolutionChange(before, after), "        resolution: 1280x720 -> 1280x1024\n");
+}
+
 TEST(FormatCommit, FormatsTheBasicFieldsWithoutARegionOrGit) {
     CommitMetadata c;
     c.id = "001";
