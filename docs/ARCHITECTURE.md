@@ -1768,3 +1768,51 @@ rebuilt, and confirmed exactly that one new test failed (both of its
 assertions) while the other five `FormatCommit` tests, including the
 extended "only when present" one, stayed green. Restored the fix,
 rebuilt, and confirmed the full suite (141 tests) passes again.
+
+## Phase 35: the timeline diff never reported a resolution change either
+
+`formatCommit()` has always shown camera resolution as part of its
+own `"camera: WxH"` line, right before the optional exposure/gain/
+white-balance fields Phase 34 just finished auditing -- but
+`timeline_main.cpp`'s between-commit diff block, which calls out every
+other camera setting that changed (`exposure_auto`, `exposure`,
+`gain`, `white_balance_auto`, `white_balance`), never compared
+`width`/`height` between consecutive commits at all. The same root
+cause as Phase 31 and Phase 34 -- README's own description of
+`palim-timeline` promises it calls out "any camera setting that
+changed," not just whichever ones happened to get wired into the diff
+first -- just the third call site this account has now found it
+missing from, and this time concretely reachable in a way the account
+had to verify, not just assume: restarting `palim` against an existing
+`commits/` directory with different `--width`/`--height` resumes
+numbering (Phase 11) rather than starting a fresh experiment, so two
+commits from different invocations of the very same physical
+experiment can genuinely carry different resolutions, with nothing
+ever calling that out.
+
+Couldn't reuse `formatOptionalIntChange()` directly, unlike the other
+five fields it already covers: `width`/`height` are plain `int`s in
+`CommitMetadata`, never `std::optional` -- a capture resolution is
+always known, never "this control isn't supported." Added a new
+`formatResolutionChange(before, after)`, reporting both dimensions as
+one combined `"resolution: WxH -> WxH"` line (matching how
+`formatCommit()`'s own `"camera: WxH"` line already shows them
+together) rather than two separate width/height lines, and wired it
+into `timeline_main.cpp`'s diff block first, ahead of the
+`exposure_auto` line, matching `formatCommit()`'s own field order.
+
+Verified against the real `palim-timeline` binary: a synthetic
+two-commit `commits/` directory with `width`/`height` changing from
+`1280x720` to `640x480` between them now prints `resolution: 1280x720
+-> 640x480` in the diff block, where before this fix the change was
+silently absent. Added `FormatResolutionChange.EmptyWhenNeitherDimen
+sionChanged`, `ReportsAChangeInEitherDimension`, and
+`ReportsAChangeInOnlyOneDimension` (confirming a change in just one of
+the two dimensions is still reported as a combined line, not silently
+dropped for not changing *both*). Verified the new tests are
+genuinely load-bearing: temporarily replaced
+`formatResolutionChange`'s own equality check with `if (true)`,
+rebuilt, and confirmed exactly the two change-reporting tests failed
+(predicting empty output) while the "nothing changed" test, which
+expects empty output anyway, stayed green. Restored the fix, rebuilt,
+and confirmed the full suite (144 tests) passes again.

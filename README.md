@@ -165,9 +165,11 @@ CLI argument parsing (`parseArgs`), `displayAvailable` (whether
 `DISPLAY`/`WAYLAND_DISPLAY` count as set), `Camera`'s failure paths (no
 device present, a non-V4L2 device), and `palim-timeline`'s own output
 formatting (`timeline_format`: hash truncation, the `?`-for-unsupported-
-control convention, and that a file going from dirty back to clean is
+control convention, that a file going from dirty back to clean is
 deliberately *not* reported, since that diff is one-directional by
-design). `Camera::grab()` against real hardware isn't covered here —
+design, and that a resolution change between consecutive commits is
+reported as one combined `WxH -> WxH` line rather than two separate
+width/height lines). `Camera::grab()` against real hardware isn't covered here —
 that needs an actual camera. Pass `-DPALIM_BUILD_TESTS=OFF` to `cmake`
 to skip building the test suite (and its GTest dependency) entirely.
 
